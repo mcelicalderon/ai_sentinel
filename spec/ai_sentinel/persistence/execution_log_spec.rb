@@ -54,6 +54,33 @@ RSpec.describe AiSentinel::Persistence::ExecutionLog, :db do
     end
   end
 
+  describe '.log_step result redaction' do
+    it 'redacts headers from step result data' do
+      execution_id = described_class.create(workflow_name: 'test_workflow')
+      result = AiSentinel::Actions::HttpGet::Result.new(
+        status: 200,
+        body: 'ok',
+        headers: { 'Authorization' => 'Bearer secret-token', 'Content-Type' => 'application/json' }
+      )
+
+      described_class.log_step(
+        execution_id: execution_id,
+        step_name: :fetch,
+        action: :http_get,
+        status: 'completed',
+        result_data: result,
+        started_at: Time.now
+      )
+
+      step = described_class.step_results(execution_id).first
+      data = JSON.parse(step[:result_data])
+
+      expect(data['headers']).to eq('[FILTERED]')
+      expect(data['body']).to eq('ok')
+      expect(data['status']).to eq(200)
+    end
+  end
+
   describe '.history' do
     it 'returns execution history' do
       described_class.create(workflow_name: 'workflow_a')

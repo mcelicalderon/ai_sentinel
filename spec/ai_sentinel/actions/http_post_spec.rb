@@ -4,6 +4,10 @@ RSpec.describe AiSentinel::Actions::HttpPost do
   let(:configuration) { AiSentinel::Configuration.new }
   let(:context) { AiSentinel::Context.new(workflow_name: 'test', execution_id: 1) }
 
+  before do
+    allow(Resolv).to receive(:getaddresses).and_return(['93.184.216.34'])
+  end
+
   describe '#call' do
     it 'makes an HTTP POST request with JSON body' do
       step = AiSentinel::Step.new(
@@ -60,6 +64,19 @@ RSpec.describe AiSentinel::Actions::HttpPost do
       result = action.call
 
       expect(result.status).to eq(200)
+    end
+
+    it 'rejects requests to private IP addresses' do
+      allow(Resolv).to receive(:getaddresses).and_return(['10.0.0.1'])
+
+      step = AiSentinel::Step.new(
+        name: :notify, action: :http_post,
+        url: 'https://internal.example.com/webhook',
+        body: { text: 'test' }
+      )
+      action = described_class.new(step: step, context: context, configuration: configuration)
+
+      expect { action.call }.to raise_error(AiSentinel::Error, %r{private/internal address})
     end
   end
 end

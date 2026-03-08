@@ -5,6 +5,8 @@ require 'json'
 module AiSentinel
   module Persistence
     class ExecutionLog
+      REDACTED_KEYS = %i[headers].freeze
+
       class << self
         def create(workflow_name:)
           return nil unless Database.connected?
@@ -74,12 +76,26 @@ module AiSentinel
         private
 
         def serialize_result(result)
-          if result.respond_to?(:to_h)
-            result.to_h
-          elsif result.is_a?(Struct)
-            result.members.zip(result.values).to_h
-          else
-            { value: result.to_s }
+          data = if result.respond_to?(:to_h)
+                   result.to_h
+                 elsif result.is_a?(Struct)
+                   result.members.zip(result.values).to_h
+                 else
+                   { value: result.to_s }
+                 end
+
+          redact(data)
+        end
+
+        def redact(hash)
+          hash.each_with_object({}) do |(key, value), acc|
+            acc[key] = if REDACTED_KEYS.include?(key.to_sym)
+                         '[FILTERED]'
+                       elsif value.is_a?(Hash)
+                         redact(value)
+                       else
+                         value
+                       end
           end
         end
       end

@@ -8,7 +8,10 @@ RSpec.describe AiSentinel::Runner, :db do
     config
   end
 
-  before { AiSentinel.instance_variable_set(:@configuration, configuration) }
+  before do
+    AiSentinel.instance_variable_set(:@configuration, configuration)
+    allow(Resolv).to receive(:getaddresses).and_return(['93.184.216.34'])
+  end
 
   describe '#execute' do
     it 'runs all steps in a workflow' do

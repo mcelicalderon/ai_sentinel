@@ -12,7 +12,10 @@ module AiSentinel
 
         def setup(database_path)
           dir = File.dirname(database_path)
-          FileUtils.mkdir_p(dir) unless File.directory?(dir)
+          unless File.directory?(dir)
+            FileUtils.mkdir_p(dir)
+            File.chmod(0o700, dir)
+          end
 
           @db = Sequel.sqlite(database_path)
           run_migrations

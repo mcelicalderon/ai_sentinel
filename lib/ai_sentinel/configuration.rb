@@ -44,6 +44,13 @@ module AiSentinel
       ENV_KEY_MAP[provider]
     end
 
+    def inspect
+      "#<#{self.class} provider=#{provider} model=#{model} base_url=#{base_url} " \
+        "database_path=#{database_path} max_context_messages=#{max_context_messages} " \
+        "api_key=#{api_key ? '[FILTERED]' : 'nil'}>"
+    end
+    alias to_s inspect
+
     def validate!
       if api_key.nil? || api_key.empty?
         raise ConfigurationError,

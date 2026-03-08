@@ -97,4 +97,27 @@ RSpec.describe AiSentinel::Configuration do
       expect(config.base_url).to eq('http://localhost:11434/v1/chat/completions')
     end
   end
+
+  describe '#inspect' do
+    it 'does not expose the api_key value' do
+      config.api_key = 'sk-ant-super-secret-key'
+      output = config.inspect
+
+      expect(output).not_to include('sk-ant-super-secret-key')
+      expect(output).to include('[FILTERED]')
+    end
+
+    it 'shows nil when api_key is not set' do
+      output = config.inspect
+
+      expect(output).to include('api_key=nil')
+    end
+
+    it 'includes non-sensitive configuration values' do
+      output = config.inspect
+
+      expect(output).to include('provider=anthropic')
+      expect(output).to include('model=claude-sonnet-4-20250514')
+    end
+  end
 end

@@ -31,12 +31,38 @@ RSpec.describe AiSentinel::Actions::ShellCommand do
       prev_result = Struct.new(:body, keyword_init: true).new(body: 'test_value')
       context.set(:fetch, prev_result)
 
-      step = AiSentinel::Step.new(name: :check, action: :shell_command, command: "echo '{{fetch.body}}'")
+      step = AiSentinel::Step.new(name: :check, action: :shell_command, command: 'echo {{fetch.body}}')
 
       action = described_class.new(step: step, context: context, configuration: configuration)
       result = action.call
 
       expect(result.stdout.strip).to eq('test_value')
+    end
+
+    it 'escapes shell metacharacters in interpolated values' do
+      prev_result = Struct.new(:body, keyword_init: true).new(body: '$(whoami) && rm -rf /')
+      context.set(:fetch, prev_result)
+
+      step = AiSentinel::Step.new(name: :check, action: :shell_command, command: 'echo {{fetch.body}}')
+
+      action = described_class.new(step: step, context: context, configuration: configuration)
+      result = action.call
+
+      expect(result.stdout).not_to include(ENV.fetch('USER', ''))
+      expect(result.success).to be true
+    end
+
+    it 'escapes backticks in interpolated values' do
+      prev_result = Struct.new(:body, keyword_init: true).new(body: '`whoami`')
+      context.set(:fetch, prev_result)
+
+      step = AiSentinel::Step.new(name: :check, action: :shell_command, command: 'echo {{fetch.body}}')
+
+      action = described_class.new(step: step, context: context, configuration: configuration)
+      result = action.call
+
+      expect(result.stdout.strip).to include('whoami')
+      expect(result.stdout).not_to include(ENV.fetch('USER', ''))
     end
   end
 end

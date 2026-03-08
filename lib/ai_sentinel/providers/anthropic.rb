@@ -47,7 +47,7 @@ module AiSentinel
         end
 
         data = JSON.parse(response.body)
-        raise Error, "Anthropic API error: #{data['error']&.fetch('message', response.body)}" unless response.success?
+        raise Error, "Anthropic API error: #{extract_error_message(data, response)}" unless response.success?
 
         data
       end
@@ -56,11 +56,17 @@ module AiSentinel
         response_data.dig('content', 0, 'text') || ''
       end
 
+      def extract_error_message(data, response)
+        data.dig('error', 'message') || "HTTP #{response.status}"
+      end
+
       def connection
         @connection ||= Faraday.new(url: configuration.base_url) do |f|
           f.headers['x-api-key'] = configuration.api_key
           f.headers['anthropic-version'] = API_VERSION
           f.headers['content-type'] = 'application/json'
+          f.options.timeout = 120
+          f.options.open_timeout = 30
           f.adapter Faraday.default_adapter
         end
       end
