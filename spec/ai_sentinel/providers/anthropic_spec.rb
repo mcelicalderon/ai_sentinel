@@ -5,8 +5,11 @@ RSpec.describe AiSentinel::Providers::Anthropic, :db do
     config = AiSentinel::Configuration.new
     config.api_key = 'test-api-key'
     config.max_context_messages = 3
+    config.logger = Logger.new(File::NULL)
     config
   end
+
+  before { AiSentinel.instance_variable_set(:@configuration, configuration) }
 
   describe '#chat' do
     it 'sends a request to the Anthropic API' do
@@ -78,6 +81,67 @@ RSpec.describe AiSentinel::Providers::Anthropic, :db do
                                                .count
 
       expect(count).to be <= configuration.max_context_messages
+    end
+
+    it 'retries with reduced context on token overflow (400)' do
+      4.times do |i|
+        AiSentinel::Persistence::Database.db[:conversation_messages].insert(
+          context_key: 'test:analyze',
+          user_message: "Q#{i}",
+          assistant_message: "A#{i}",
+          created_at: Time.now + i,
+          updated_at: Time.now + i
+        )
+      end
+
+      overflow_body = {
+        error: { type: 'invalid_request_error', message: 'prompt is too long: too many tokens' }
+      }.to_json
+      success_body = {
+        content: [{ type: 'text', text: 'OK' }], model: 'claude-sonnet-4-20250514', usage: {}
+      }.to_json
+
+      stub_request(:post, 'https://api.anthropic.com/v1/messages')
+        .to_return(
+          { status: 400, body: overflow_body, headers: { 'Content-Type' => 'application/json' } },
+          { status: 200, body: success_body, headers: { 'Content-Type' => 'application/json' } }
+        )
+
+      provider = described_class.new(configuration: configuration)
+      result = provider.chat(prompt: 'New question', workflow_name: 'test', step_name: 'analyze')
+
+      expect(result.response).to eq('OK')
+    end
+
+    it 'retries with reduced context on request too large (413)' do
+      stub_request(:post, 'https://api.anthropic.com/v1/messages')
+        .to_return(
+          { status: 413, body: { error: { type: 'request_too_large', message: 'Request too large' } }.to_json,
+            headers: { 'Content-Type' => 'application/json' } },
+          { status: 200,
+            body: { content: [{ type: 'text', text: 'OK' }], model: 'claude-sonnet-4-20250514', usage: {} }.to_json,
+            headers: { 'Content-Type' => 'application/json' } }
+        )
+
+      provider = described_class.new(configuration: configuration)
+      result = provider.chat(prompt: 'Hi', workflow_name: 'test', step_name: 'greet', remember: false)
+
+      expect(result.response).to eq('OK')
+    end
+
+    it 'raises after exhausting context retries' do
+      overflow_body = {
+        error: { type: 'invalid_request_error', message: 'too many tokens' }
+      }.to_json
+
+      stub_request(:post, 'https://api.anthropic.com/v1/messages')
+        .to_return(status: 400, body: overflow_body, headers: { 'Content-Type' => 'application/json' })
+
+      provider = described_class.new(configuration: configuration)
+
+      expect do
+        provider.chat(prompt: 'Hi', workflow_name: 'test', step_name: 'greet', remember: false)
+      end.to raise_error(AiSentinel::Error, /Context still too large after/)
     end
   end
 end

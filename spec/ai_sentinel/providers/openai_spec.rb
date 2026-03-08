@@ -6,9 +6,9 @@ RSpec.describe AiSentinel::Providers::Openai, :db do
     config.provider = :openai
     config.api_key = 'test-openai-key'
     config.max_context_messages = 3
+    config.logger = Logger.new(File::NULL)
     config
   end
-
   let(:success_body) do
     {
       choices: [{ message: { role: 'assistant', content: 'Hello!' } }],
@@ -16,6 +16,8 @@ RSpec.describe AiSentinel::Providers::Openai, :db do
       usage: { prompt_tokens: 10, completion_tokens: 5 }
     }.to_json
   end
+
+  before { AiSentinel.instance_variable_set(:@configuration, configuration) }
 
   describe '#chat' do
     it 'sends a request to the OpenAI API' do
@@ -158,6 +160,65 @@ RSpec.describe AiSentinel::Providers::Openai, :db do
                                                .count
 
       expect(count).to be <= configuration.max_context_messages
+    end
+
+    it 'retries with reduced context on token overflow' do
+      4.times do |i|
+        AiSentinel::Persistence::Database.db[:conversation_messages].insert(
+          context_key: 'test:analyze',
+          user_message: "Q#{i}",
+          assistant_message: "A#{i}",
+          created_at: Time.now + i,
+          updated_at: Time.now + i
+        )
+      end
+
+      overflow_body = {
+        error: { message: "This model's maximum context length is 8192 tokens" }
+      }.to_json
+
+      stub_request(:post, 'https://api.openai.com/v1/chat/completions')
+        .to_return(
+          { status: 400, body: overflow_body, headers: { 'Content-Type' => 'application/json' } },
+          { status: 200, body: success_body, headers: { 'Content-Type' => 'application/json' } }
+        )
+
+      provider = described_class.new(configuration: configuration)
+      result = provider.chat(prompt: 'New question', workflow_name: 'test', step_name: 'analyze')
+
+      expect(result.response).to eq('Hello!')
+    end
+
+    it 'retries on context_length_exceeded error code' do
+      overflow_body = {
+        error: { message: 'context_length_exceeded', code: 'context_length_exceeded' }
+      }.to_json
+
+      stub_request(:post, 'https://api.openai.com/v1/chat/completions')
+        .to_return(
+          { status: 400, body: overflow_body, headers: { 'Content-Type' => 'application/json' } },
+          { status: 200, body: success_body, headers: { 'Content-Type' => 'application/json' } }
+        )
+
+      provider = described_class.new(configuration: configuration)
+      result = provider.chat(prompt: 'Hi', workflow_name: 'test', step_name: 'greet', remember: false)
+
+      expect(result.response).to eq('Hello!')
+    end
+
+    it 'raises after exhausting context retries' do
+      overflow_body = {
+        error: { message: "This model's maximum context length is 8192 tokens" }
+      }.to_json
+
+      stub_request(:post, 'https://api.openai.com/v1/chat/completions')
+        .to_return(status: 400, body: overflow_body, headers: { 'Content-Type' => 'application/json' })
+
+      provider = described_class.new(configuration: configuration)
+
+      expect do
+        provider.chat(prompt: 'Hi', workflow_name: 'test', step_name: 'greet', remember: false)
+      end.to raise_error(AiSentinel::Error, /Context still too large after/)
     end
   end
 end

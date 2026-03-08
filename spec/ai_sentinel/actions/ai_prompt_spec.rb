@@ -85,7 +85,7 @@ RSpec.describe AiSentinel::Actions::AiPrompt, :db do
         updated_at: Time.now
       )
 
-      step = AiSentinel::Step.new(name: :analyze, action: :ai_prompt, prompt: 'Follow up')
+      step = AiSentinel::Step.new(name: :analyze, action: :ai_prompt, prompt: 'Follow up', remember: true)
 
       stub_request(:post, 'https://api.anthropic.com/v1/messages')
         .with(body: hash_including(

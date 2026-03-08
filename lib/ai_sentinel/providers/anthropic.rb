@@ -12,9 +12,11 @@ module AiSentinel
         model ||= configuration.model
         context_key = "#{workflow_name}:#{step_name}"
 
-        messages = build_messages(prompt, context_key, remember)
-        body = build_request_body(messages, model, system)
-        response_data = send_request(body)
+        response_data = with_context_retry(configuration.max_context_messages) do |ctx_limit|
+          messages = build_messages(prompt, context_key, remember, limit: ctx_limit)
+          body = build_request_body(messages, model, system)
+          send_request(body)
+        end
 
         assistant_text = extract_text(response_data)
         save_context(context_key, prompt, assistant_text) if remember
@@ -28,9 +30,9 @@ module AiSentinel
 
       private
 
-      def build_messages(prompt, context_key, remember)
+      def build_messages(prompt, context_key, remember, limit: nil)
         messages = []
-        messages.concat(load_context(context_key)) if remember
+        messages.concat(load_context(context_key, limit: limit)) if remember
         messages << { 'role' => 'user', 'content' => prompt }
         messages
       end
@@ -47,9 +49,23 @@ module AiSentinel
         end
 
         data = JSON.parse(response.body)
-        raise Error, "Anthropic API error: #{extract_error_message(data, response)}" unless response.success?
+
+        unless response.success?
+          message = extract_error_message(data, response)
+          raise ContextOverflowError, message if context_overflow?(response, data)
+
+          raise Error, "Anthropic API error: #{message}"
+        end
 
         data
+      end
+
+      def context_overflow?(response, data)
+        return true if response.status == 413
+
+        response.status == 400 &&
+          data.dig('error', 'type') == 'invalid_request_error' &&
+          data.dig('error', 'message').to_s.match?(/too many tokens|token/i)
       end
 
       def extract_text(response_data)

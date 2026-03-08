@@ -14,7 +14,7 @@ module AiSentinel
         prompt = interpolate(step.params[:prompt])
         system_prompt = step.params[:system] ? interpolate(step.params[:system]) : nil
         model = step.params[:model] || configuration.model
-        remember = step.params.fetch(:remember, true)
+        remember = step.params.fetch(:remember, false)
 
         provider = build_provider
         provider.chat(

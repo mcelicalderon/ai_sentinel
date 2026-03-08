@@ -2,7 +2,11 @@
 
 module AiSentinel
   module Providers
+    class ContextOverflowError < Error; end
+
     class Base
+      MAX_CONTEXT_RETRIES = 3
+
       attr_reader :configuration
 
       def initialize(configuration:)
@@ -15,13 +19,35 @@ module AiSentinel
 
       private
 
-      def load_context(context_key)
+      def with_context_retry(context_limit)
+        retries = 0
+
+        begin
+          yield context_limit
+        rescue ContextOverflowError => e
+          retries += 1
+          context_limit = (context_limit / 2.0).ceil
+
+          if retries > MAX_CONTEXT_RETRIES || context_limit.zero?
+            raise Error, "Context still too large after #{retries} retries: #{e.message}"
+          end
+
+          AiSentinel.logger.warn(
+            "Context overflow, retrying with #{context_limit} messages (attempt #{retries}/#{MAX_CONTEXT_RETRIES})"
+          )
+          retry
+        end
+      end
+
+      def load_context(context_key, limit: nil)
         return [] unless Persistence::Database.connected?
+
+        limit ||= configuration.max_context_messages
 
         Persistence::Database.db[:conversation_messages]
                              .where(context_key: context_key)
                              .order(:created_at)
-                             .last(configuration.max_context_messages)
+                             .last(limit)
                              .flat_map do |row|
           [
             { 'role' => 'user', 'content' => row[:user_message] },
