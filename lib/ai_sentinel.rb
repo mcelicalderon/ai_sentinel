@@ -28,12 +28,6 @@ module AiSentinel
       configuration
     end
 
-    def watch(name, &)
-      workflow = DSL.new(name, &).build
-      registry[name] = workflow
-      workflow
-    end
-
     def registry
       @registry ||= {}
     end

@@ -14,7 +14,11 @@ module AiSentinel
     def skip?(context)
       return false if condition.nil?
 
-      !condition.call(context)
+      if condition.respond_to?(:call)
+        !condition.call(context)
+      else
+        !ConditionEvaluator.evaluate(condition.to_s, context)
+      end
     end
   end
 end

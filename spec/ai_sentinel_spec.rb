@@ -23,25 +23,28 @@ RSpec.describe AiSentinel do
     end
   end
 
-  describe '.watch' do
-    it 'registers a workflow' do
-      described_class.watch 'test_workflow' do
-        schedule '0 9 * * *'
-        step :fetch, action: :http_get, url: 'https://example.com'
-      end
+  describe '.registry' do
+    it 'stores workflows' do
+      workflow = AiSentinel::Workflow.new(
+        name: 'test',
+        schedule_expression: '0 9 * * *',
+        steps: [AiSentinel::Step.new(name: :fetch, action: :http_get, url: 'https://example.com')]
+      )
+      described_class.registry['test'] = workflow
 
-      expect(described_class.registry).to have_key('test_workflow')
-      expect(described_class.registry['test_workflow']).to be_a(AiSentinel::Workflow)
+      expect(described_class.registry).to have_key('test')
+      expect(described_class.registry['test']).to be_a(AiSentinel::Workflow)
     end
   end
 
   describe '.reset!' do
     it 'clears configuration and registry' do
       described_class.configure { |c| c.api_key = 'test' }
-      described_class.watch('test') do
-        schedule '0 9 * * *'
-        step :fetch, action: :http_get, url: 'https://example.com'
-      end
+      described_class.registry['test'] = AiSentinel::Workflow.new(
+        name: 'test',
+        schedule_expression: '0 9 * * *',
+        steps: [AiSentinel::Step.new(name: :fetch, action: :http_get, url: 'https://example.com')]
+      )
 
       described_class.reset!
 

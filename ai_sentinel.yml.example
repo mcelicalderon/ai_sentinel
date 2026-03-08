@@ -1,0 +1,59 @@
+# ai_sentinel.yml
+#
+# Configuration file for AiSentinel.
+# Copy this file to ai_sentinel.yml and customize it.
+#
+# API keys should be set via environment variables (e.g. in .env):
+#   ANTHROPIC_API_KEY=sk-ant-...
+
+global:
+  provider: anthropic
+  model: claude-sonnet-4-20250514
+  # database: ./ai_sentinel.sqlite3
+  # max_context_messages: 50
+
+workflows:
+  # Summarize a website every minute
+  summarize_site:
+    schedule: "* * * * *"
+    steps:
+      - id: fetch
+        action: http_get
+        params:
+          url: "https://example.com"
+
+      - id: summarize
+        action: ai_prompt
+        params:
+          system: "You are a concise technical writer. Summarize website content in 3-5 sentences."
+          prompt: "Summarize the following website content:\n\n{{fetch.body}}"
+          remember: false
+
+      - id: save
+        action: shell_command
+        params:
+          command: 'echo "{{summarize.response}}" > "site_summary_$(date +%Y%m%d_%H%M%S).txt"'
+
+  # Monitor an API and alert on anomalies (every 6 hours)
+  # price_monitor:
+  #   schedule: "0 */6 * * *"
+  #   steps:
+  #     - id: fetch
+  #       action: http_get
+  #       params:
+  #         url: "https://api.example.com/prices"
+  #         headers:
+  #           Authorization: "Bearer ${API_TOKEN}"
+  #
+  #     - id: analyze
+  #       action: ai_prompt
+  #       params:
+  #         prompt: "Analyze these prices for anomalies: {{fetch.body}}"
+  #
+  #     - id: notify
+  #       action: http_post
+  #       when: '{{analyze.response}} contains "anomaly"'
+  #       params:
+  #         url: "https://hooks.slack.com/services/xxx"
+  #         body:
+  #           text: "Price alert: {{analyze.response}}"

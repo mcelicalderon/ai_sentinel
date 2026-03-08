@@ -1,198 +1,237 @@
 # AiSentinel
 
-A lightweight Ruby gem for scheduling AI-driven tasks. Define workflows that run on a cron schedule, process data through LLMs, and take conditional actions based on the results. Designed to be self-hostable on minimal hardware -- just Ruby and SQLite.
+A lightweight Ruby gem for scheduling AI-driven tasks. Define workflows in a YAML config file that run on a cron schedule, process data through LLMs, and take conditional actions based on the results. Designed to be self-hostable on minimal hardware -- just Ruby and SQLite.
 
 ## Features
 
+- **YAML configuration** -- define workflows, steps, and conditions in a simple config file
 - **Cron-based scheduling** via [rufus-scheduler](https://github.com/jmettraux/rufus-scheduler)
 - **AI-powered steps** using the Anthropic Claude API
 - **Persistent conversation context** -- the AI remembers previous interactions across runs (stored in SQLite)
-- **Conditional step execution** -- skip steps based on previous results
+- **Conditional step execution** with `when` expressions
 - **Template interpolation** -- pass data between steps with `{{step_name.field}}` syntax
 - **Built-in actions**: HTTP GET/POST, AI prompts, shell commands
+- **Config validation** -- catch errors before running
 - **Execution logging** -- full history of workflow runs and step results in SQLite
-- **CLI** for starting, listing, running, and inspecting workflows
+- **CLI** for starting, running, validating, and inspecting workflows
 - **Environment variable support** via [dotenv](https://github.com/bkeepers/dotenv)
 
 ## Installation
-
-Add to your Gemfile:
-
-```ruby
-gem 'ai_sentinel'
-```
-
-Or install directly:
 
 ```bash
 gem install ai_sentinel
 ```
 
-## Configuration
+Or add to your Gemfile:
 
-### Environment Variables
+```ruby
+gem 'ai_sentinel'
+```
 
-Copy `.env.example` to `.env` and set your API key:
+## Quick Start
+
+### 1. Set your API key
 
 ```bash
-cp .env.example .env
+echo "ANTHROPIC_API_KEY=sk-ant-..." > .env
 ```
 
-```env
-ANTHROPIC_API_KEY=your-api-key-here
+### 2. Generate a config file
+
+```bash
+ai_sentinel init
 ```
 
-The `.env` file is automatically loaded via dotenv. **Never commit `.env` to version control.**
+This creates `ai_sentinel.yml` with a sample workflow.
 
-### Ruby Configuration
+### 3. Validate the config
 
-```ruby
-AiSentinel.configure do |config|
-  config.provider = :anthropic                      # LLM provider (only :anthropic for now)
-  config.api_key = ENV['ANTHROPIC_API_KEY']         # Falls back to env var automatically
-  config.model = 'claude-sonnet-4-20250514'                 # Default model
-  config.database_path = '~/.ai_sentinel/db.sqlite3'  # SQLite database location
-  config.max_context_messages = 50                  # Max conversation history per step
-end
+```bash
+ai_sentinel validate
 ```
 
-## Defining Workflows
+### 4. Run a workflow manually
 
-Create a Ruby config file (e.g., `sentinel.rb`):
+```bash
+ai_sentinel run example
+```
 
-```ruby
-require 'ai_sentinel'
+### 5. Start the scheduler
 
-AiSentinel.configure do |config|
-  config.api_key = ENV['ANTHROPIC_API_KEY']
-end
+```bash
+ai_sentinel start
+```
 
-# Monitor prices every morning at 9 AM
-AiSentinel.watch 'check_prices' do
-  schedule '0 9 * * *'
+Press Ctrl+C to stop.
 
-  step :fetch, action: :http_get,
-    url: 'https://api.example.com/prices'
+## Configuration
 
-  step :analyze, action: :ai_prompt,
-    prompt: 'Analyze these prices for anomalies: {{fetch.body}}'
+All configuration is done in `ai_sentinel.yml` (or specify a path with `-c`).
 
-  step :notify, action: :http_post,
-    url: 'https://hooks.slack.com/services/xxx',
-    body: { text: '{{analyze.response}}' },
-    condition: ->(ctx) { ctx[:analyze].response.include?('anomaly') }
-end
+```yaml
+global:
+  provider: anthropic
+  model: claude-sonnet-4-20250514
+  database: ./ai_sentinel.sqlite3
+  max_context_messages: 50
 
-# Check server health every 5 minutes
-AiSentinel.watch 'health_check' do
-  schedule '*/5 * * * *'
+workflows:
+  check_prices:
+    schedule: "0 9 * * *"
+    steps:
+      - id: fetch
+        action: http_get
+        params:
+          url: "https://api.example.com/prices"
 
-  step :check, action: :shell_command,
-    command: 'curl -s -o /dev/null -w "%{http_code}" https://myapp.com/health'
+      - id: analyze
+        action: ai_prompt
+        params:
+          prompt: "Analyze these prices for anomalies: {{fetch.body}}"
 
-  step :diagnose, action: :ai_prompt,
-    system: 'You are a systems administrator. Be concise.',
-    prompt: 'Server health check returned: {{check.stdout}}. Is this normal?',
-    condition: ->(ctx) { ctx[:check].stdout.strip != '200' }
-end
+      - id: notify
+        action: http_post
+        when: '{{analyze.response}} contains "anomaly"'
+        params:
+          url: "https://hooks.slack.com/services/xxx"
+          body:
+            text: "Price alert: {{analyze.response}}"
+```
 
-AiSentinel.start
+### Global settings
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `provider` | `anthropic` | LLM provider |
+| `model` | `claude-sonnet-4-20250514` | Default model |
+| `database` | `~/.ai_sentinel/db.sqlite3` | SQLite database path |
+| `max_context_messages` | `50` | Max conversation history per step |
+
+API keys are loaded from environment variables (via `.env` file). **Never put API keys in the YAML config.**
+
+### Workflow definition
+
+Each workflow has a `schedule` (cron expression) and a list of `steps`:
+
+```yaml
+workflows:
+  my_workflow:
+    schedule: "*/5 * * * *"    # every 5 minutes
+    steps:
+      - id: step_name          # unique identifier
+        action: http_get       # action type
+        when: '...'            # optional condition
+        params:                # action-specific parameters
+          url: "https://..."
 ```
 
 ## Actions
 
 ### `http_get`
 
-```ruby
-step :fetch, action: :http_get,
-  url: 'https://api.example.com/data',
-  headers: { 'Authorization' => 'Bearer {{token}}' }
+```yaml
+- id: fetch
+  action: http_get
+  params:
+    url: "https://api.example.com/data"
+    headers:
+      Authorization: "Bearer token"
 ```
 
 Returns: `status`, `body`, `headers`
 
 ### `http_post`
 
-```ruby
-step :notify, action: :http_post,
-  url: 'https://hooks.slack.com/services/xxx',
-  body: { text: 'Alert: {{analyze.response}}' },
-  headers: { 'Authorization' => 'Bearer token' }
+```yaml
+- id: notify
+  action: http_post
+  params:
+    url: "https://hooks.slack.com/services/xxx"
+    body:
+      text: "Alert: {{analyze.response}}"
+    headers:
+      Authorization: "Bearer token"
 ```
 
 Returns: `status`, `body`, `headers`
 
 ### `ai_prompt`
 
-```ruby
-step :analyze, action: :ai_prompt,
-  prompt: 'Analyze this data: {{fetch.body}}',
-  system: 'You are a data analyst.',    # optional system prompt
-  model: 'claude-sonnet-4-20250514',            # optional, overrides default
-  remember: true                        # persist conversation context (default: true)
+```yaml
+- id: analyze
+  action: ai_prompt
+  params:
+    prompt: "Analyze this data: {{fetch.body}}"
+    system: "You are a data analyst."
+    model: claude-sonnet-4-20250514
+    remember: true
 ```
 
 Returns: `response`, `model`, `usage`
 
-When `remember: true`, the conversation history is stored in SQLite and included in subsequent calls. This means the AI can reference previous analyses across scheduled runs.
+When `remember: true` (default), conversation history is stored in SQLite and included in subsequent calls, so the AI can reference previous analyses across scheduled runs.
 
 ### `shell_command`
 
-```ruby
-step :check, action: :shell_command,
-  command: 'df -h / | tail -1',
-  timeout: 30                           # seconds (default: 30)
+```yaml
+- id: check
+  action: shell_command
+  params:
+    command: 'df -h / | tail -1'
+    timeout: 30
 ```
 
 Returns: `stdout`, `stderr`, `exit_code`, `success`
 
-## Conditional Steps
+## Conditions
 
-Steps can have a `condition` lambda that receives the workflow context. The step is skipped if the condition returns `false`:
+Use `when` to conditionally execute a step. Supports comparisons and string matching:
 
-```ruby
-step :alert, action: :http_post,
-  url: 'https://hooks.slack.com/services/xxx',
-  body: { text: 'Disk space critical!' },
-  condition: ->(ctx) { ctx[:check].stdout.include?('9') }
+```yaml
+# Equality
+when: '{{fetch.status}} == 200'
+
+# Inequality
+when: '{{fetch.status}} != 200'
+
+# Numeric comparisons
+when: '{{fetch.status}} >= 400'
+
+# String contains
+when: '{{analyze.response}} contains "anomaly"'
+
+# String does not contain
+when: '{{check.stderr}} not_contains "error"'
 ```
 
 ## Template Interpolation
 
-Use `{{step_name.field}}` to reference results from previous steps:
+Use `{{step_id.field}}` to reference results from previous steps:
 
-```ruby
-step :summarize, action: :ai_prompt,
-  prompt: 'Status: {{check.stdout}}, Exit: {{check.exit_code}}'
+```yaml
+- id: summarize
+  action: ai_prompt
+  params:
+    prompt: "Status: {{check.stdout}}, Exit: {{check.exit_code}}"
 ```
 
 ## CLI
 
 ```bash
-# Start the scheduler with a config file
-ai_sentinel start sentinel.rb
+ai_sentinel start                # Start the scheduler
+ai_sentinel start -d             # Start in background mode
+ai_sentinel run WORKFLOW         # Manually trigger a workflow
+ai_sentinel validate             # Validate config file
+ai_sentinel list                 # List workflows
+ai_sentinel init                 # Generate sample config
+ai_sentinel history              # Show execution history
+ai_sentinel history WORKFLOW     # Filter by workflow
+ai_sentinel context WF STEP     # Show conversation context
+ai_sentinel clear_context WF STEP  # Clear conversation context
+ai_sentinel version              # Show version
 
-# Start in background mode
-ai_sentinel start sentinel.rb -d
-
-# List registered workflows
-ai_sentinel list sentinel.rb
-
-# Manually trigger a workflow
-ai_sentinel run sentinel.rb check_prices
-
-# View execution history
-ai_sentinel history
-ai_sentinel history check_prices -n 10
-
-# View conversation context for a step
-ai_sentinel context check_prices analyze
-
-# Clear conversation context
-ai_sentinel clear_context check_prices analyze
-
-# Show version
-ai_sentinel version
+# Use a custom config path
+ai_sentinel start -c path/to/config.yml
 ```
 
 ## Conversation Memory
@@ -207,17 +246,11 @@ AiSentinel persists AI conversation history in SQLite, keyed by `workflow_name:s
 ## Development
 
 ```bash
-# Install dependencies
-bundle install
-
-# Run tests
-bundle exec rspec
-
-# Run linter
-bundle exec rubocop
-
-# Run both
-bundle exec rake
+bin/setup          # Install dependencies
+bundle exec rspec  # Run tests
+bundle exec rubocop # Run linter
+bundle exec rake   # Run both
+bin/console        # Interactive console
 ```
 
 ## License
