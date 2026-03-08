@@ -14,7 +14,10 @@ module AiSentinel
       'max_context_messages' => ->(config, val) { config.max_context_messages = val },
       'base_url' => ->(config, val) { config.base_url = val },
       'compaction_threshold' => ->(config, val) { config.compaction_threshold = val },
-      'compaction_buffer' => ->(config, val) { config.compaction_buffer = val }
+      'compaction_buffer' => ->(config, val) { config.compaction_buffer = val },
+      'log_file' => ->(config, val) { config.log_file = File.expand_path(val) },
+      'log_file_size' => ->(config, val) { config.log_file_size = val },
+      'log_files' => ->(config, val) { config.log_files = val }
     }.freeze
 
     attr_reader :config_path, :raw_config

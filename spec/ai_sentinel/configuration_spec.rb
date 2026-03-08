@@ -23,6 +23,18 @@ RSpec.describe AiSentinel::Configuration do
     it 'sets a default logger' do
       expect(config.logger).to be_a(Logger)
     end
+
+    it 'defaults log_file to nil (STDOUT)' do
+      expect(config.log_file).to be_nil
+    end
+
+    it 'defaults log_file_size to 10 MB' do
+      expect(config.log_file_size).to eq(10 * 1024 * 1024)
+    end
+
+    it 'defaults log_files to 5' do
+      expect(config.log_files).to eq(5)
+    end
   end
 
   describe '#validate!' do
@@ -98,6 +110,51 @@ RSpec.describe AiSentinel::Configuration do
     end
   end
 
+  describe '#logger' do
+    it 'logs to STDOUT by default' do
+      expect { config.logger.info('test') }.to output(/test/).to_stdout_from_any_process
+    end
+
+    it 'logs to a file when log_file is set' do
+      Dir.mktmpdir do |tmpdir|
+        log_path = File.join(tmpdir, 'test.log')
+        config.log_file = log_path
+        config.logger.info('hello from file')
+
+        expect(File.read(log_path)).to include('hello from file')
+      end
+    end
+
+    it 'creates the log directory if it does not exist' do
+      Dir.mktmpdir do |tmpdir|
+        log_path = File.join(tmpdir, 'nested', 'dir', 'test.log')
+        config.log_file = log_path
+        config.logger.info('nested log')
+
+        expect(File.exist?(log_path)).to be true
+      end
+    end
+
+    it 'configures rotation with log_files and log_file_size' do
+      Dir.mktmpdir do |tmpdir|
+        log_path = File.join(tmpdir, 'test.log')
+        config.log_file = log_path
+        config.log_file_size = 1024
+        config.log_files = 3
+        logger = config.logger
+
+        expect(logger).to be_a(Logger)
+      end
+    end
+
+    it 'returns a custom logger when set directly' do
+      custom = Logger.new(File::NULL)
+      config.logger = custom
+
+      expect(config.logger).to be(custom)
+    end
+  end
+
   describe '#inspect' do
     it 'does not expose the api_key value' do
       config.api_key = 'sk-ant-super-secret-key'
@@ -118,6 +175,15 @@ RSpec.describe AiSentinel::Configuration do
 
       expect(output).to include('provider=anthropic')
       expect(output).to include('model=claude-sonnet-4-20250514')
+    end
+
+    it 'shows STDOUT when log_file is nil' do
+      expect(config.inspect).to include('log_file=STDOUT')
+    end
+
+    it 'shows the log_file path when set' do
+      config.log_file = '/var/log/ai_sentinel.log'
+      expect(config.inspect).to include('log_file=/var/log/ai_sentinel.log')
     end
   end
 end

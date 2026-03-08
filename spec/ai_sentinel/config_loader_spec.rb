@@ -79,6 +79,49 @@ RSpec.describe AiSentinel::ConfigLoader do
       expect(AiSentinel.configuration.max_context_messages).to eq(25)
     end
 
+    it 'applies log_file from global configuration' do
+      write_config(<<~YAML)
+        global:
+          log_file: "./logs/ai_sentinel.log"
+
+        workflows:
+          test:
+            schedule: "* * * * *"
+            steps:
+              - id: ping
+                action: shell_command
+                params:
+                  command: "echo hello"
+      YAML
+
+      described_class.new(config_path).load!
+
+      expect(AiSentinel.configuration.log_file).to eq(File.expand_path('./logs/ai_sentinel.log'))
+    end
+
+    it 'applies log rotation settings from global configuration' do
+      write_config(<<~YAML)
+        global:
+          log_file: "./test.log"
+          log_file_size: 5242880
+          log_files: 3
+
+        workflows:
+          test:
+            schedule: "* * * * *"
+            steps:
+              - id: ping
+                action: shell_command
+                params:
+                  command: "echo hello"
+      YAML
+
+      described_class.new(config_path).load!
+
+      expect(AiSentinel.configuration.log_file_size).to eq(5_242_880)
+      expect(AiSentinel.configuration.log_files).to eq(3)
+    end
+
     it 'applies base_url from global configuration' do
       write_config(<<~YAML)
         global:

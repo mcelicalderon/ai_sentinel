@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'fileutils'
+
 module AiSentinel
   class Configuration
     VALID_PROVIDERS = %i[anthropic openai].freeze
@@ -19,9 +21,13 @@ module AiSentinel
       openai: 'https://api.openai.com/v1/chat/completions'
     }.freeze
 
-    attr_accessor :provider, :api_key, :database_path, :logger, :max_context_messages,
-                  :compaction_threshold, :compaction_buffer
-    attr_writer :model, :base_url
+    DEFAULT_LOG_FILE_SIZE = 10 * 1024 * 1024
+    DEFAULT_LOG_FILES = 5
+
+    attr_accessor :provider, :api_key, :database_path, :max_context_messages,
+                  :compaction_threshold, :compaction_buffer, :log_file,
+                  :log_file_size, :log_files
+    attr_writer :model, :base_url, :logger
 
     def initialize
       @provider = :anthropic
@@ -29,10 +35,17 @@ module AiSentinel
       @model = nil
       @base_url = nil
       @database_path = File.join(Dir.home, '.ai_sentinel', 'db.sqlite3')
-      @logger = default_logger
+      @logger = nil
+      @log_file = nil
+      @log_file_size = DEFAULT_LOG_FILE_SIZE
+      @log_files = DEFAULT_LOG_FILES
       @max_context_messages = 50
       @compaction_threshold = 40
       @compaction_buffer = 10
+    end
+
+    def logger
+      @logger ||= build_logger
     end
 
     def model
@@ -49,7 +62,8 @@ module AiSentinel
 
     def inspect
       "#<#{self.class} provider=#{provider} model=#{model} base_url=#{base_url} " \
-        "database_path=#{database_path} max_context_messages=#{max_context_messages} " \
+        "database_path=#{database_path} log_file=#{log_file || 'STDOUT'} " \
+        "max_context_messages=#{max_context_messages} " \
         "compaction_threshold=#{compaction_threshold} compaction_buffer=#{compaction_buffer} " \
         "api_key=#{api_key ? '[FILTERED]' : 'nil'}>"
     end
@@ -68,13 +82,23 @@ module AiSentinel
 
     private
 
-    def default_logger
-      logger = Logger.new($stdout)
-      logger.level = Logger::INFO
-      logger.formatter = proc do |severity, datetime, _progname, msg|
+    def build_logger
+      output = if log_file
+                 ensure_log_directory(log_file)
+                 Logger.new(log_file, log_files, log_file_size)
+               else
+                 Logger.new($stdout)
+               end
+      output.level = Logger::INFO
+      output.formatter = proc do |severity, datetime, _progname, msg|
         "[#{datetime.strftime('%Y-%m-%d %H:%M:%S')}] #{severity}: #{msg}\n"
       end
-      logger
+      output
+    end
+
+    def ensure_log_directory(path)
+      dir = File.dirname(File.expand_path(path))
+      FileUtils.mkdir_p(dir)
     end
   end
 end

@@ -16,6 +16,7 @@ A lightweight Ruby gem for scheduling AI-driven tasks. Define workflows in a YAM
 - **Config validation** -- catch errors before running
 - **SSRF protection** -- blocks requests to private/loopback/link-local addresses
 - **Shell injection protection** -- interpolated values are shell-escaped
+- **File logging with rotation** -- optional log file output with automatic size-based rotation
 - **Execution logging** -- full history of workflow runs and step results in SQLite
 - **CLI** for starting, running, validating, and inspecting workflows
 - **Environment variable support** via [dotenv](https://github.com/bkeepers/dotenv)
@@ -132,6 +133,9 @@ global:
   max_context_messages: 50
   compaction_threshold: 40
   compaction_buffer: 10
+  log_file: ./logs/ai_sentinel.log
+  log_file_size: 10485760
+  log_files: 5
   base_url: http://localhost:11434/v1/chat/completions
 ```
 
@@ -143,6 +147,9 @@ global:
 | `max_context_messages` | `50` | Max conversation history per step |
 | `compaction_threshold` | `40` | Message count that triggers automatic context compaction |
 | `compaction_buffer` | `10` | Number of recent messages to keep verbatim after compaction |
+| `log_file` | `nil` (STDOUT) | Log file path. When omitted, logs go to STDOUT. |
+| `log_file_size` | `10485760` (10 MB) | Max size per log file before rotation |
+| `log_files` | `5` | Number of rotated log files to keep |
 | `base_url` | Provider-specific (see below) | API endpoint URL |
 
 ### Providers
@@ -397,6 +404,21 @@ If an API call exceeds the provider's token limit despite compaction, AiSentinel
 
 - **Anthropic**: detects HTTP 400 `invalid_request_error` with token-related messages, or HTTP 413 `request_too_large`
 - **OpenAI**: detects HTTP 400 with `maximum context length`, `too many tokens`, or `context_length_exceeded` messages
+
+## Logging
+
+By default, AiSentinel logs to STDOUT. Set `log_file` to redirect logs to a file with automatic rotation:
+
+```yaml
+global:
+  log_file: ./logs/ai_sentinel.log
+  log_file_size: 10485760    # 10 MB per file (default)
+  log_files: 5               # keep 5 rotated files (default)
+```
+
+When `log_file` is set, AiSentinel creates the directory if it doesn't exist and uses Ruby's built-in `Logger` rotation. When the active log file reaches `log_file_size`, it is renamed (e.g. `ai_sentinel.log.0`, `ai_sentinel.log.1`, ...) and a new file is started. The oldest file is deleted when `log_files` is exceeded.
+
+Omit `log_file` (or leave it unset) to keep the default STDOUT behavior, which is useful for development and Docker/container environments where logs are captured from the process output.
 
 ## Development
 
