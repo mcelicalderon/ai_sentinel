@@ -305,6 +305,87 @@ RSpec.describe AiSentinel::ConfigLoader do
       expect { described_class.new(config_path).load! }
         .to raise_error(AiSentinel::ConfigurationError, /Invalid provider/)
     end
+
+    it 'raises when step references unknown tool' do
+      write_config(<<~YAML)
+        workflows:
+          test:
+            schedule: "* * * * *"
+            steps:
+              - id: analyze
+                action: ai_prompt
+                params:
+                  prompt: "Hello"
+                  tools:
+                    - unknown_tool
+      YAML
+
+      expect { described_class.new(config_path).load! }
+        .to raise_error(AiSentinel::ConfigurationError, /unknown tool 'unknown_tool'/)
+    end
+
+    it 'accepts valid tool names in ai_prompt steps' do
+      write_config(<<~YAML)
+        workflows:
+          test:
+            schedule: "* * * * *"
+            steps:
+              - id: analyze
+                action: ai_prompt
+                params:
+                  prompt: "Hello"
+                  tools:
+                    - shell_command
+      YAML
+
+      expect { described_class.new(config_path).load! }.not_to raise_error
+    end
+
+    it 'applies tool_safety from global configuration' do
+      write_config(<<~YAML)
+        global:
+          tool_safety:
+            allowed_commands:
+              - echo
+              - ls
+            tool_timeout: 10
+            max_output_bytes: 2048
+        workflows:
+          test:
+            schedule: "* * * * *"
+            steps:
+              - id: ping
+                action: shell_command
+                params:
+                  command: "echo hello"
+      YAML
+
+      described_class.new(config_path).load!
+
+      safety = AiSentinel.configuration.tool_safety
+      expect(safety[:allowed_commands]).to eq(%w[echo ls])
+      expect(safety[:tool_timeout]).to eq(10)
+      expect(safety[:max_output_bytes]).to eq(2048)
+    end
+
+    it 'applies max_tool_rounds from global configuration' do
+      write_config(<<~YAML)
+        global:
+          max_tool_rounds: 5
+        workflows:
+          test:
+            schedule: "* * * * *"
+            steps:
+              - id: ping
+                action: shell_command
+                params:
+                  command: "echo hello"
+      YAML
+
+      described_class.new(config_path).load!
+
+      expect(AiSentinel.configuration.max_tool_rounds).to eq(5)
+    end
   end
 
   describe 'default config file detection' do

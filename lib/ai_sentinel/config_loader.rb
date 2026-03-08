@@ -18,7 +18,9 @@ module AiSentinel
       'log_file' => ->(config, val) { config.log_file = File.expand_path(val) },
       'log_file_size' => ->(config, val) { config.log_file_size = val },
       'log_files' => ->(config, val) { config.log_files = val },
-      'on_prompt_change' => ->(config, val) { config.on_prompt_change = val.to_sym }
+      'on_prompt_change' => ->(config, val) { config.on_prompt_change = val.to_sym },
+      'tool_safety' => ->(config, val) { config.tool_safety = val.transform_keys(&:to_sym) },
+      'max_tool_rounds' => ->(config, val) { config.max_tool_rounds = val }
     }.freeze
 
     attr_reader :config_path, :raw_config
@@ -97,10 +99,26 @@ module AiSentinel
 
       raise ConfigurationError, "Step '#{id}' in '#{workflow_name}' is missing 'id'" unless step['id']
       raise ConfigurationError, "Step '#{id}' in '#{workflow_name}' is missing 'action'" unless action
-      return if VALID_ACTIONS.include?(action)
 
-      raise ConfigurationError,
-            "Step '#{id}' in '#{workflow_name}' has invalid action '#{action}'. Valid: #{VALID_ACTIONS.join(', ')}"
+      unless VALID_ACTIONS.include?(action)
+        raise ConfigurationError,
+              "Step '#{id}' in '#{workflow_name}' has invalid action '#{action}'. Valid: #{VALID_ACTIONS.join(', ')}"
+      end
+
+      validate_step_tools(workflow_name, id, step)
+    end
+
+    def validate_step_tools(workflow_name, step_id, step)
+      tools = step.dig('params', 'tools')
+      return unless tools
+
+      tools.each do |tool_name|
+        next if Configuration::VALID_TOOLS.include?(tool_name)
+
+        raise ConfigurationError,
+              "Step '#{step_id}' in '#{workflow_name}' references unknown tool '#{tool_name}'. " \
+              "Valid: #{Configuration::VALID_TOOLS.join(', ')}"
+      end
     end
 
     def apply_global_config

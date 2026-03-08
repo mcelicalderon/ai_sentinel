@@ -20,16 +20,16 @@ Metrics/BlockLength:
     - '*.gemspec'
 
 Metrics/ClassLength:
-  Max: 130
+  Max: 150
 
 Metrics/MethodLength:
   Max: 25
 
 Metrics/AbcSize:
-  Max: 35
+  Max: 38
 
 Metrics/ParameterLists:
-  Max: 8
+  Max: 10
 
 RSpec/MultipleExpectations:
   Max: 5

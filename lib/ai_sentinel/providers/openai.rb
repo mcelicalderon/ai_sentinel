@@ -7,13 +7,18 @@ module AiSentinel
   module Providers
     class Openai < Base
       def chat(prompt:, system: nil, model: nil, workflow_name: nil, step_name: nil, remember: true,
-               prompt_template: nil, system_template: nil)
+               prompt_template: nil, system_template: nil, tool_executor: nil, max_tool_rounds: 10)
         model ||= configuration.model
         context_key = "#{workflow_name}:#{step_name}"
 
         response_data = with_context_retry(configuration.max_context_messages) do |ctx_limit|
           messages = build_messages(prompt, system, context_key, remember, limit: ctx_limit)
-          send_request(messages, model)
+
+          if tool_executor
+            run_tool_loop(messages, model, tool_executor, max_tool_rounds)
+          else
+            send_request(messages, model)
+          end
         end
 
         assistant_text = extract_text(response_data)
@@ -31,6 +36,46 @@ module AiSentinel
 
       private
 
+      def run_tool_loop(messages, model, tool_executor, max_tool_rounds)
+        tools = tool_executor.tool_definitions_for(:openai)
+        current_messages = messages.dup
+        last_response = nil
+
+        max_tool_rounds.times do |round|
+          last_response = send_request_with_tools(current_messages, model, tools)
+
+          tool_calls = last_response.dig('choices', 0, 'message', 'tool_calls')
+          break unless tool_calls&.any?
+
+          current_messages << last_response.dig('choices', 0, 'message')
+
+          tool_calls.each do |tool_call|
+            result = execute_tool_call(tool_executor, tool_call, round)
+            current_messages << result
+          end
+        end
+
+        last_response
+      end
+
+      def execute_tool_call(tool_executor, tool_call, round)
+        function = tool_call['function']
+        tool_name = function['name']
+        tool_input = JSON.parse(function['arguments'])
+        tool_id = tool_call['id']
+
+        AiSentinel.logger.info("    Tool call [round #{round + 1}]: #{tool_name}(#{function['arguments']})")
+
+        begin
+          result = tool_executor.execute(tool_name, tool_input)
+          AiSentinel.logger.info("    Tool result: #{result.to_s[0..200]}")
+          { 'role' => 'tool', 'tool_call_id' => tool_id, 'content' => result.to_s }
+        rescue Error => e
+          AiSentinel.logger.warn("    Tool error: #{e.message}")
+          { 'role' => 'tool', 'tool_call_id' => tool_id, 'content' => "Error: #{e.message}" }
+        end
+      end
+
       def build_messages(prompt, system, context_key, remember, limit: nil)
         messages = []
         messages << { 'role' => 'system', 'content' => system } if system
@@ -41,6 +86,15 @@ module AiSentinel
 
       def send_request(messages, model)
         body = { model: model, messages: messages }
+        post_request(body)
+      end
+
+      def send_request_with_tools(messages, model, tools)
+        body = { model: model, messages: messages, tools: tools }
+        post_request(body)
+      end
+
+      def post_request(body)
         response = connection.post do |req|
           req.body = JSON.generate(body)
         end

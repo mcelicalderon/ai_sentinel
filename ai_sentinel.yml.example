@@ -12,33 +12,79 @@ global:
   model: claude-sonnet-4-20250514    # default model for your provider
   # database: ./ai_sentinel.sqlite3
   # max_context_messages: 50
+  # max_tool_rounds: 10               # max tool-loop iterations per ai_prompt step (default: 10)
   # on_prompt_change: ask               # ask, keep, or drop
   # log_file: ./logs/ai_sentinel.log    # omit to log to STDOUT
   # log_file_size: 10485760             # 10 MB per file (default)
   # log_files: 5                        # rotated files to keep (default)
   # base_url: https://api.openai.com/v1/chat/completions  # for OpenAI-compatible APIs (Ollama, LM Studio, etc.)
+  tool_safety:
+    allowed_commands:
+      - echo
+      - cat
+      - date
+    tool_timeout: 30
+    max_output_bytes: 10240
 
 workflows:
-  # Summarize a website every minute
-  summarize_site:
+  # AI agent that fetches the current time, then uses shell tools to log it.
+  # The agent remembers previous runs via conversation context (remember: true),
+  # so it can reference how many entries it has logged, time gaps, and trends --
+  # all without reading the file. On each run the AI autonomously decides which
+  # shell commands to call (e.g. echo to append, cat to verify) within a single
+  # ai_prompt step, as long as the binaries are in the allowed_commands list.
+  time_logger:
     schedule: "* * * * *"
     steps:
       - id: fetch
         action: http_get
         params:
-          url: "https://example.com"
+          url: "https://timeapi.io/api/time/current/zone?timeZone=America/Guatemala"
 
-      - id: summarize
+      - id: log_time
         action: ai_prompt
         params:
-          system: "You are a concise technical writer. Summarize website content in 3-5 sentences."
-          prompt: "Summarize the following website content:\n\n{{fetch.body}}"
-          remember: false
+          system: >-
+            You are a time logging assistant. You use the shell_command tool to
+            append entries to a local file called time_log.txt using echo with >>.
+            Each entry should include the current time from the data provided and
+            a short observation. You remember previous runs from our conversation
+            history -- reference patterns you notice (e.g. how much time passed
+            since the last entry, how many entries you have logged so far, any
+            trends). Do NOT read the file -- rely only on your memory of previous
+            conversations.
+          prompt: >-
+            Here is the current time data:
 
-      - id: save
-        action: shell_command
-        params:
-          command: 'echo "{{summarize.response}}" > "site_summary_$(date +%Y%m%d_%H%M%S).txt"'
+            {{fetch.body}}
+
+            Append a new timestamped entry to time_log.txt. Use only your memory
+            of previous runs for context.
+          remember: true
+          tools:
+            - shell_command
+          max_tool_rounds: 5
+
+  # Summarize a website every minute (no tool use, classic workflow)
+  # summarize_site:
+  #   schedule: "* * * * *"
+  #   steps:
+  #     - id: fetch
+  #       action: http_get
+  #       params:
+  #         url: "https://example.com"
+  #
+  #     - id: summarize
+  #       action: ai_prompt
+  #       params:
+  #         system: "You are a concise technical writer. Summarize website content in 3-5 sentences."
+  #         prompt: "Summarize the following website content:\n\n{{fetch.body}}"
+  #         remember: false
+  #
+  #     - id: save
+  #       action: shell_command
+  #       params:
+  #         command: 'echo "{{summarize.response}}" > "site_summary_$(date +%Y%m%d_%H%M%S).txt"'
 
   # Monitor an API and alert on anomalies (every 6 hours)
   # price_monitor:

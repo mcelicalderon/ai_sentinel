@@ -13,8 +13,7 @@ module AiSentinel
         @configuration = configuration
       end
 
-      def chat(prompt:, system: nil, model: nil, workflow_name: nil, step_name: nil, remember: true,
-               prompt_template: nil, system_template: nil)
+      def chat(**options)
         raise NotImplementedError, "#{self.class}#chat must be implemented"
       end
 

@@ -35,6 +35,14 @@ RSpec.describe AiSentinel::Configuration do
     it 'defaults log_files to 5' do
       expect(config.log_files).to eq(5)
     end
+
+    it 'defaults tool_safety to nil' do
+      expect(config.tool_safety).to be_nil
+    end
+
+    it 'defaults max_tool_rounds to 10' do
+      expect(config.max_tool_rounds).to eq(10)
+    end
   end
 
   describe '#validate!' do

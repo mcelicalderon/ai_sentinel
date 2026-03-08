@@ -221,5 +221,132 @@ RSpec.describe AiSentinel::Providers::Openai, :db do
         provider.chat(prompt: 'Hi', workflow_name: 'test', step_name: 'greet', remember: false)
       end.to raise_error(AiSentinel::Error, /Context still too large after/)
     end
+
+    context 'with tool use' do
+      let(:tool_executor) do
+        tool = AiSentinel::Tools::ShellCommand.new
+        AiSentinel::ToolExecutor.new(tools: [tool], configuration: configuration)
+      end
+      let(:json_headers) { { 'Content-Type' => 'application/json' } }
+
+      def tool_call_response(id: 'call_123', command: 'echo hello')
+        {
+          choices: [{
+            message: {
+              role: 'assistant', content: nil,
+              tool_calls: [{
+                id: id, type: 'function',
+                function: { name: 'shell_command', arguments: JSON.generate({ command: command }) }
+              }]
+            }
+          }],
+          model: 'gpt-4o', usage: {}
+        }.to_json
+      end
+
+      def text_response(text)
+        {
+          choices: [{ message: { role: 'assistant', content: text } }],
+          model: 'gpt-4o', usage: {}
+        }.to_json
+      end
+
+      it 'sends tools in request body' do
+        stub_request(:post, 'https://api.openai.com/v1/chat/completions')
+          .with(body: hash_including('tools'))
+          .to_return(status: 200, body: text_response('Done'), headers: json_headers)
+
+        provider = described_class.new(configuration: configuration)
+        result = provider.chat(
+          prompt: 'List files', workflow_name: 'test', step_name: 'review',
+          remember: false, tool_executor: tool_executor
+        )
+
+        expect(result.response).to eq('Done')
+      end
+
+      it 'executes tool calls and loops until final text response' do
+        stub_request(:post, 'https://api.openai.com/v1/chat/completions')
+          .to_return(
+            { status: 200, body: tool_call_response, headers: json_headers },
+            { status: 200, body: text_response('The output was: hello'), headers: json_headers }
+          )
+
+        allow(tool_executor).to receive(:execute)
+          .and_return('{"stdout":"hello\\n","stderr":"","exit_code":0}')
+
+        provider = described_class.new(configuration: configuration)
+        result = provider.chat(
+          prompt: 'Run echo hello', workflow_name: 'test', step_name: 'review',
+          remember: false, tool_executor: tool_executor
+        )
+
+        expect(result.response).to eq('The output was: hello')
+        expect(tool_executor).to have_received(:execute).once
+      end
+
+      it 'handles tool execution errors gracefully' do
+        stub_request(:post, 'https://api.openai.com/v1/chat/completions')
+          .to_return(
+            { status: 200, body: tool_call_response(command: 'rm -rf /'), headers: json_headers },
+            { status: 200, body: text_response('That command is not allowed.'), headers: json_headers }
+          )
+
+        allow(tool_executor).to receive(:execute)
+          .and_raise(AiSentinel::Error, 'Command not allowed')
+
+        provider = described_class.new(configuration: configuration)
+        result = provider.chat(
+          prompt: 'Delete everything', workflow_name: 'test', step_name: 'review',
+          remember: false, tool_executor: tool_executor
+        )
+
+        expect(result.response).to eq('That command is not allowed.')
+      end
+
+      it 'respects max_tool_rounds limit' do
+        stub_request(:post, 'https://api.openai.com/v1/chat/completions')
+          .to_return(status: 200, body: tool_call_response(id: 'call_loop', command: 'echo loop'),
+                     headers: json_headers)
+
+        allow(tool_executor).to receive(:execute)
+          .and_return('{"stdout":"loop\\n","stderr":"","exit_code":0}')
+
+        provider = described_class.new(configuration: configuration)
+        provider.chat(
+          prompt: 'Keep looping', workflow_name: 'test', step_name: 'review',
+          remember: false, tool_executor: tool_executor, max_tool_rounds: 2
+        )
+
+        expect(tool_executor).to have_received(:execute).exactly(2).times
+      end
+
+      it 'only persists the initial prompt and final response with remember' do
+        stub_request(:post, 'https://api.openai.com/v1/chat/completions')
+          .to_return(
+            { status: 200, body: tool_call_response(id: 'call_mem', command: 'echo hi'),
+              headers: json_headers },
+            { status: 200, body: text_response('Final answer'), headers: json_headers }
+          )
+
+        allow(tool_executor).to receive(:execute)
+          .and_return('{"stdout":"hi\\n","stderr":"","exit_code":0}')
+
+        provider = described_class.new(configuration: configuration)
+        provider.chat(
+          prompt: 'Run echo hi', workflow_name: 'test', step_name: 'memory_test',
+          remember: true, tool_executor: tool_executor
+        )
+
+        ctx = AiSentinel::Persistence::Database.db[:conversation_contexts]
+                                               .where(context_key: 'test:memory_test').first
+        messages = AiSentinel::Persistence::Database.db[:conversation_messages]
+                                                    .where(conversation_context_id: ctx[:id]).all
+
+        expect(messages.size).to eq(1)
+        expect(messages.first[:user_message]).to eq('Run echo hi')
+        expect(messages.first[:assistant_message]).to eq('Final answer')
+      end
+    end
   end
 end

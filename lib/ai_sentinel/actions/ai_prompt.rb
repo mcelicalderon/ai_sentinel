@@ -10,11 +10,16 @@ module AiSentinel
         openai: Providers::Openai
       }.freeze
 
+      TOOL_MAP = {
+        'shell_command' => Tools::ShellCommand
+      }.freeze
+
       def call
         prompt = interpolate(step.params[:prompt])
         system_prompt = step.params[:system] ? interpolate(step.params[:system]) : nil
         model = step.params[:model] || configuration.model
         remember = step.params.fetch(:remember, false)
+        tool_executor = build_tool_executor
 
         provider = build_provider
         provider.chat(
@@ -25,7 +30,9 @@ module AiSentinel
           step_name: step.name,
           remember: remember,
           prompt_template: step.params[:prompt],
-          system_template: step.params[:system]
+          system_template: step.params[:system],
+          tool_executor: tool_executor,
+          max_tool_rounds: step.params.fetch(:max_tool_rounds, configuration.max_tool_rounds)
         )
       end
 
@@ -36,6 +43,20 @@ module AiSentinel
         raise Error, "Unknown provider: #{configuration.provider}" unless provider_class
 
         provider_class.new(configuration: configuration)
+      end
+
+      def build_tool_executor
+        tool_names = step.params.fetch(:tools, nil)
+        return nil unless tool_names&.any?
+
+        tools = tool_names.map do |name|
+          tool_class = TOOL_MAP[name]
+          raise Error, "Unknown tool: #{name}" unless tool_class
+
+          tool_class.new
+        end
+
+        ToolExecutor.new(tools: tools, configuration: configuration)
       end
     end
   end

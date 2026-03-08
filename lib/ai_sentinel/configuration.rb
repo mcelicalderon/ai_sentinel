@@ -25,9 +25,13 @@ module AiSentinel
     DEFAULT_LOG_FILES = 5
     VALID_PROMPT_CHANGE_POLICIES = %i[ask keep drop].freeze
 
+    VALID_TOOLS = %w[shell_command].freeze
+    DEFAULT_MAX_TOOL_ROUNDS = 10
+
     attr_accessor :provider, :api_key, :database_path, :max_context_messages,
                   :compaction_threshold, :compaction_buffer, :log_file,
-                  :log_file_size, :log_files, :on_prompt_change
+                  :log_file_size, :log_files, :on_prompt_change,
+                  :tool_safety, :max_tool_rounds
     attr_writer :model, :base_url, :logger
 
     def initialize
@@ -44,6 +48,8 @@ module AiSentinel
       @compaction_threshold = 40
       @compaction_buffer = 10
       @on_prompt_change = :ask
+      @tool_safety = nil
+      @max_tool_rounds = DEFAULT_MAX_TOOL_ROUNDS
     end
 
     def logger
@@ -67,6 +73,7 @@ module AiSentinel
         "database_path=#{database_path} log_file=#{log_file || 'STDOUT'} " \
         "max_context_messages=#{max_context_messages} " \
         "compaction_threshold=#{compaction_threshold} compaction_buffer=#{compaction_buffer} " \
+        "max_tool_rounds=#{max_tool_rounds} " \
         "api_key=#{api_key ? '[FILTERED]' : 'nil'}>"
     end
     alias to_s inspect
