@@ -6,7 +6,7 @@ A lightweight Ruby gem for scheduling AI-driven tasks. Define workflows in a YAM
 
 - **YAML configuration** -- define workflows, steps, and conditions in a simple config file
 - **Cron-based scheduling** via [rufus-scheduler](https://github.com/jmettraux/rufus-scheduler)
-- **AI-powered steps** using the Anthropic Claude API
+- **Multiple LLM providers** -- Anthropic Claude and OpenAI (plus any OpenAI-compatible API)
 - **Persistent conversation context** -- the AI remembers previous interactions across runs (stored in SQLite)
 - **Conditional step execution** with `when` expressions
 - **Template interpolation** -- pass data between steps with `{{step_name.field}}` syntax
@@ -18,22 +18,62 @@ A lightweight Ruby gem for scheduling AI-driven tasks. Define workflows in a YAM
 
 ## Installation
 
+Install the gem to make the `ai_sentinel` binary available system-wide:
+
 ```bash
 gem install ai_sentinel
 ```
 
-Or add to your Gemfile:
+After installation, the `ai_sentinel` command is available in your `PATH`:
+
+```bash
+ai_sentinel version
+```
+
+> **Executable not found?** Ruby gems install binaries into a `bin/` directory that must be in your `PATH`. Run `gem environment` and look for the **EXECUTABLE DIRECTORY** value. Make sure that directory is in your `PATH`:
+>
+> ```bash
+> # Check where gem binaries are installed
+> gem environment | grep "EXECUTABLE DIRECTORY"
+>
+> # Add it to your shell profile if needed (~/.bashrc, ~/.zshrc, etc.)
+> export PATH="$(gem environment gemdir)/bin:$PATH"
+> ```
+>
+> If you use a Ruby version manager (asdf, rbenv, mise, chruby, rvm, etc.), gem binaries are typically added to your `PATH` automatically via shims. If the command still isn't found, run your version manager's reshim command (e.g., `asdf reshim ruby`, `rbenv rehash`).
+
+### Bundler (for development or embedding in a project)
+
+Add to your Gemfile:
 
 ```ruby
 gem 'ai_sentinel'
 ```
 
-## Quick Start
+Then run:
+
+```bash
+bundle install
+```
+
+When installed via Bundler, run commands with `bundle exec`:
+
+```bash
+bundle exec ai_sentinel version
+```
+
+## Quick start
 
 ### 1. Set your API key
 
+Create a `.env` file in the directory where you'll run AiSentinel:
+
 ```bash
+# For Anthropic
 echo "ANTHROPIC_API_KEY=sk-ant-..." > .env
+
+# For OpenAI
+echo "OPENAI_API_KEY=sk-..." > .env
 ```
 
 ### 2. Generate a config file
@@ -42,7 +82,7 @@ echo "ANTHROPIC_API_KEY=sk-ant-..." > .env
 ai_sentinel init
 ```
 
-This creates `ai_sentinel.yml` with a sample workflow.
+This creates `ai_sentinel.yml` with a sample workflow in the current directory.
 
 ### 3. Validate the config
 
@@ -53,7 +93,7 @@ ai_sentinel validate
 ### 4. Run a workflow manually
 
 ```bash
-ai_sentinel run example
+ai_sentinel run summarize_site
 ```
 
 ### 5. Start the scheduler
@@ -62,11 +102,23 @@ ai_sentinel run example
 ai_sentinel start
 ```
 
-Press Ctrl+C to stop.
+Press `Ctrl+C` to stop.
+
+### Using a custom config path
+
+By default, AiSentinel looks for `ai_sentinel.yml` or `ai_sentinel.yaml` in the current directory. Use the `-c` flag to specify a different path:
+
+```bash
+ai_sentinel start -c /path/to/my_config.yml
+ai_sentinel run my_workflow -c /path/to/my_config.yml
+ai_sentinel validate -c /path/to/my_config.yml
+```
 
 ## Configuration
 
-All configuration is done in `ai_sentinel.yml` (or specify a path with `-c`).
+All configuration is done in `ai_sentinel.yml`. API keys are loaded from environment variables (via `.env` file). **Never put API keys in the YAML config.**
+
+### Global settings
 
 ```yaml
 global:
@@ -74,6 +126,83 @@ global:
   model: claude-sonnet-4-20250514
   database: ./ai_sentinel.sqlite3
   max_context_messages: 50
+  base_url: http://localhost:11434/v1/chat/completions
+```
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `provider` | `anthropic` | LLM provider (`anthropic` or `openai`) |
+| `model` | Provider-specific (see below) | Default model for AI steps |
+| `database` | `~/.ai_sentinel/db.sqlite3` | SQLite database path |
+| `max_context_messages` | `50` | Max conversation history per step |
+| `base_url` | Provider-specific (see below) | API endpoint URL |
+
+### Providers
+
+AiSentinel supports two providers out of the box. Each has sensible defaults:
+
+| Provider | Default model | Default URL | Env var |
+|----------|--------------|-------------|---------|
+| `anthropic` | `claude-sonnet-4-20250514` | `https://api.anthropic.com/v1/messages` | `ANTHROPIC_API_KEY` |
+| `openai` | `gpt-4o` | `https://api.openai.com/v1/chat/completions` | `OPENAI_API_KEY` |
+
+#### Anthropic
+
+```yaml
+global:
+  provider: anthropic
+  model: claude-sonnet-4-20250514    # optional, this is the default
+```
+
+```bash
+echo "ANTHROPIC_API_KEY=sk-ant-..." > .env
+```
+
+#### OpenAI
+
+```yaml
+global:
+  provider: openai
+  model: gpt-4o                      # optional, this is the default
+```
+
+```bash
+echo "OPENAI_API_KEY=sk-..." > .env
+```
+
+#### OpenAI-compatible APIs (Ollama, LM Studio, Azure, etc.)
+
+Set `base_url` to point to any API that implements the OpenAI chat completions interface:
+
+```yaml
+global:
+  provider: openai
+  model: llama3
+  base_url: http://localhost:11434/v1/chat/completions
+```
+
+### Workflow definition
+
+Each workflow has a `schedule` (cron expression) and a list of `steps`:
+
+```yaml
+workflows:
+  my_workflow:
+    schedule: "*/5 * * * *"    # every 5 minutes
+    steps:
+      - id: step_name          # unique identifier
+        action: http_get       # action type
+        when: '...'            # optional condition
+        params:                # action-specific parameters
+          url: "https://..."
+```
+
+### Full example
+
+```yaml
+global:
+  provider: anthropic
+  model: claude-sonnet-4-20250514
 
 workflows:
   check_prices:
@@ -96,33 +225,6 @@ workflows:
           url: "https://hooks.slack.com/services/xxx"
           body:
             text: "Price alert: {{analyze.response}}"
-```
-
-### Global settings
-
-| Key | Default | Description |
-|-----|---------|-------------|
-| `provider` | `anthropic` | LLM provider |
-| `model` | `claude-sonnet-4-20250514` | Default model |
-| `database` | `~/.ai_sentinel/db.sqlite3` | SQLite database path |
-| `max_context_messages` | `50` | Max conversation history per step |
-
-API keys are loaded from environment variables (via `.env` file). **Never put API keys in the YAML config.**
-
-### Workflow definition
-
-Each workflow has a `schedule` (cron expression) and a list of `steps`:
-
-```yaml
-workflows:
-  my_workflow:
-    schedule: "*/5 * * * *"    # every 5 minutes
-    steps:
-      - id: step_name          # unique identifier
-        action: http_get       # action type
-        when: '...'            # optional condition
-        params:                # action-specific parameters
-          url: "https://..."
 ```
 
 ## Actions
@@ -163,13 +265,13 @@ Returns: `status`, `body`, `headers`
   params:
     prompt: "Analyze this data: {{fetch.body}}"
     system: "You are a data analyst."
-    model: claude-sonnet-4-20250514
+    model: gpt-4o
     remember: true
 ```
 
 Returns: `response`, `model`, `usage`
 
-When `remember: true` (default), conversation history is stored in SQLite and included in subsequent calls, so the AI can reference previous analyses across scheduled runs.
+The `model` param on a step overrides the global default. When `remember: true` (default), conversation history is stored in SQLite and included in subsequent calls, so the AI can reference previous analyses across scheduled runs.
 
 ### `shell_command`
 
@@ -204,7 +306,7 @@ when: '{{analyze.response}} contains "anomaly"'
 when: '{{check.stderr}} not_contains "error"'
 ```
 
-## Template Interpolation
+## Template interpolation
 
 Use `{{step_id.field}}` to reference results from previous steps:
 
@@ -217,24 +319,27 @@ Use `{{step_id.field}}` to reference results from previous steps:
 
 ## CLI
 
-```bash
-ai_sentinel start                # Start the scheduler
-ai_sentinel start -d             # Start in background mode
-ai_sentinel run WORKFLOW         # Manually trigger a workflow
-ai_sentinel validate             # Validate config file
-ai_sentinel list                 # List workflows
-ai_sentinel init                 # Generate sample config
-ai_sentinel history              # Show execution history
-ai_sentinel history WORKFLOW     # Filter by workflow
-ai_sentinel context WF STEP     # Show conversation context
-ai_sentinel clear_context WF STEP  # Clear conversation context
-ai_sentinel version              # Show version
+```
+ai_sentinel start                    Start the scheduler
+ai_sentinel start -d                 Start in background mode
+ai_sentinel run WORKFLOW             Manually trigger a workflow
+ai_sentinel validate                 Validate config file
+ai_sentinel list                     List workflows
+ai_sentinel init                     Generate sample config
+ai_sentinel history                  Show execution history
+ai_sentinel history WORKFLOW         Filter by workflow
+ai_sentinel history -n 50            Show last 50 entries
+ai_sentinel context WF STEP          Show conversation context
+ai_sentinel clear_context WF STEP    Clear conversation context
+ai_sentinel version                  Show version
+ai_sentinel -v                       Show version
 
-# Use a custom config path
+# Use a custom config path (works with any command)
 ai_sentinel start -c path/to/config.yml
+ai_sentinel run my_workflow -c path/to/config.yml
 ```
 
-## Conversation Memory
+## Conversation memory
 
 AiSentinel persists AI conversation history in SQLite, keyed by `workflow_name:step_name`. This means:
 
@@ -251,6 +356,13 @@ bundle exec rspec  # Run tests
 bundle exec rubocop # Run linter
 bundle exec rake   # Run both
 bin/console        # Interactive console
+```
+
+To install the gem locally for testing the CLI:
+
+```bash
+bundle exec rake install
+ai_sentinel version
 ```
 
 ## License
