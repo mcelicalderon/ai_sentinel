@@ -397,24 +397,22 @@ If a referenced step hasn't run yet (e.g. it was skipped by a `when` condition),
 
 ## Conditions
 
-Use `when` to conditionally execute a step. The condition is evaluated after template interpolation, so you can reference result fields from previous steps. Supports comparisons and string matching:
+Use `when` to conditionally execute a step. The condition is evaluated after template interpolation, so you can reference result fields from previous steps.
 
-```yaml
-# Equality
-when: '{{fetch.status}} == 200'
+**Available operators:**
 
-# Inequality
-when: '{{fetch.status}} != 200'
+| Operator | Description | Example |
+|----------|-------------|---------|
+| `==` | Equality | `'{{fetch.status}} == 200'` |
+| `!=` | Inequality | `'{{fetch.status}} != 200'` |
+| `>` | Greater than (numeric) | `'{{fetch.status}} > 299'` |
+| `>=` | Greater than or equal (numeric) | `'{{fetch.status}} >= 400'` |
+| `<` | Less than (numeric) | `'{{fetch.status}} < 300'` |
+| `<=` | Less than or equal (numeric) | `'{{fetch.status}} <= 299'` |
+| `contains` | String includes substring | `'{{analyze.response}} contains "anomaly"'` |
+| `not_contains` | String does not include substring | `'{{check.stderr}} not_contains "error"'` |
 
-# Numeric comparisons
-when: '{{fetch.status}} >= 400'
-
-# String contains
-when: '{{analyze.response}} contains "anomaly"'
-
-# String does not contain
-when: '{{check.stderr}} not_contains "error"'
-```
+String values on the right side can be wrapped in double or single quotes. Numeric comparisons convert both sides to floats. If the expression doesn't match any operator pattern, it is evaluated as truthy (anything other than empty string, `0`, `false`, `nil`, or `null`).
 
 ## CLI
 
