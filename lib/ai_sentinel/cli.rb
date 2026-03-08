@@ -138,5 +138,7 @@ module AiSentinel
     def version
       say "ai_sentinel #{AiSentinel::VERSION}"
     end
+    map '--version' => :version
+    map '-v' => :version
   end
 end
