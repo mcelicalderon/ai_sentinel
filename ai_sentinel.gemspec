@@ -20,10 +20,11 @@ Gem::Specification.new do |spec|
   spec.metadata['changelog_uri'] = "#{spec.homepage}/blob/main/CHANGELOG.md"
   spec.metadata['rubygems_mfa_required'] = 'true'
 
-  spec.files = Dir.chdir(__dir__) do
-    `git ls-files -z`.split("\x0").reject do |f|
-      (File.expand_path(f) == __FILE__) ||
-        f.start_with?('spec/', 'test/', '.git', '.github', 'bin/')
+  gemspec_file = File.basename(__FILE__)
+  spec.files = IO.popen(%w[git ls-files -z], chdir: __dir__, err: IO::NULL) do |ls|
+    ls.readlines("\x0", chomp: true).reject do |f|
+      f == gemspec_file ||
+        f.start_with?(*%w[bin/ spec/ test/ features/ .git .github .rubocop .rspec .env Gemfile Rakefile])
     end
   end
 
@@ -37,4 +38,5 @@ Gem::Specification.new do |spec|
   spec.add_dependency 'sequel', '~> 5.0'
   spec.add_dependency 'sqlite3', '~> 2.0'
   spec.add_dependency 'thor', '~> 1.0'
+  spec.add_dependency 'zeitwerk', '~> 2.6'
 end

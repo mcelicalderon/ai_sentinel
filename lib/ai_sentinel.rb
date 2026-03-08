@@ -1,26 +1,18 @@
 # frozen_string_literal: true
 
+require 'zeitwerk'
 require 'dotenv/load'
 require 'logger'
 
 require_relative 'ai_sentinel/version'
-require_relative 'ai_sentinel/configuration'
-require_relative 'ai_sentinel/context'
-require_relative 'ai_sentinel/step'
-require_relative 'ai_sentinel/workflow'
-require_relative 'ai_sentinel/dsl'
-require_relative 'ai_sentinel/actions/base'
-require_relative 'ai_sentinel/actions/http_get'
-require_relative 'ai_sentinel/actions/http_post'
-require_relative 'ai_sentinel/actions/ai_prompt'
-require_relative 'ai_sentinel/actions/shell_command'
-require_relative 'ai_sentinel/providers/base'
-require_relative 'ai_sentinel/providers/anthropic'
-require_relative 'ai_sentinel/persistence/database'
-require_relative 'ai_sentinel/persistence/execution_log'
-require_relative 'ai_sentinel/runner'
-require_relative 'ai_sentinel/scheduler'
-require_relative 'ai_sentinel/cli'
+
+loader = Zeitwerk::Loader.for_gem
+loader.inflector.inflect(
+  'cli' => 'CLI',
+  'dsl' => 'DSL'
+)
+loader.ignore("#{__dir__}/ai_sentinel/version.rb")
+loader.setup
 
 module AiSentinel
   class Error < StandardError; end

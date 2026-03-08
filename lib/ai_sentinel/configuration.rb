@@ -37,6 +37,4 @@ module AiSentinel
       logger
     end
   end
-
-  class ConfigurationError < StandardError; end
 end

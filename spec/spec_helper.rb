@@ -28,6 +28,10 @@ RSpec.configure do |config|
   config.order = :random
   Kernel.srand config.seed
 
+  config.before(:suite) do
+    Zeitwerk::Loader.eager_load_all
+  end
+
   config.before do
     AiSentinel.reset!
   end
