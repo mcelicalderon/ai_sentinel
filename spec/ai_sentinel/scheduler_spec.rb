@@ -38,19 +38,72 @@ RSpec.describe AiSentinel::Scheduler, :db do
   end
 
   describe '#start' do
-    it 'starts in daemonize mode without blocking' do
-      workflow = AiSentinel::Workflow.new(
+    let(:workflow) do
+      AiSentinel::Workflow.new(
         name: 'test',
         schedule_expression: '0 9 * * *',
         steps: [
           AiSentinel::Step.new(name: :fetch, action: :http_get, url: 'https://api.example.com/data')
         ]
       )
+    end
+    let(:registry) { { 'test' => workflow } }
+    let(:scheduler) { described_class.new(registry, configuration) }
+    let(:mock_rufus) { instance_double(Rufus::Scheduler, cron: nil, shutdown: nil) }
 
-      registry = { 'test' => workflow }
-      scheduler = described_class.new(registry, configuration)
-      scheduler.start(daemonize: true)
-      scheduler.stop
+    before do
+      allow(Rufus::Scheduler).to receive(:new).and_return(mock_rufus)
+      allow(mock_rufus).to receive(:join) { scheduler.stop }
+    end
+
+    it 'registers workflows and joins the scheduler' do
+      scheduler.start
+
+      expect(mock_rufus).to have_received(:join)
+    end
+
+    it 'traps INT and TERM signals' do
+      allow(scheduler).to receive(:trap)
+
+      scheduler.start
+
+      expect(scheduler).to have_received(:trap).with('INT')
+      expect(scheduler).to have_received(:trap).with('TERM')
+    end
+
+    it 'cleans up PID file on stop' do
+      pid_path = scheduler.pid_file
+      File.write(pid_path, '12345')
+
+      scheduler.start
+
+      expect(File.exist?(pid_path)).to be false
+    end
+
+    context 'when daemonize is true' do
+      before do
+        allow(Process).to receive(:daemon)
+        allow(File).to receive(:write)
+      end
+
+      it 'calls Process.daemon before creating the scheduler' do
+        call_order = []
+        allow(Process).to receive(:daemon) { call_order << :daemon }
+        allow(Rufus::Scheduler).to receive(:new) {
+          call_order << :scheduler
+          mock_rufus
+        }
+
+        scheduler.start(daemonize: true)
+
+        expect(call_order).to eq(%i[daemon scheduler])
+      end
+
+      it 'writes a PID file' do
+        scheduler.start(daemonize: true)
+
+        expect(File).to have_received(:write).with(scheduler.pid_file, Process.pid.to_s)
+      end
     end
   end
 end

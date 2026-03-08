@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require 'fileutils'
 require 'rufus-scheduler'
 
 module AiSentinel
@@ -9,21 +10,25 @@ module AiSentinel
     def initialize(registry, configuration)
       @registry = registry
       @configuration = configuration
-      @rufus = Rufus::Scheduler.new
     end
 
     def start(daemonize: false)
-      register_workflows
-
       if daemonize
-        AiSentinel.logger.info("AiSentinel started in background (#{registry.size} workflow(s))")
+        Process.daemon(true, true)
+        write_pid_file
+        AiSentinel.logger.info("AiSentinel started in background (PID #{Process.pid}, #{registry.size} workflow(s))")
       else
         AiSentinel.logger.info("AiSentinel started (#{registry.size} workflow(s)). Press Ctrl+C to stop.")
-        trap('INT') { Thread.new { stop } }
-        trap('TERM') { Thread.new { stop } }
-        @rufus.join
-        AiSentinel.logger.info('AiSentinel stopped')
       end
+
+      @rufus = Rufus::Scheduler.new
+      register_workflows
+
+      trap('INT') { Thread.new { stop } }
+      trap('TERM') { Thread.new { stop } }
+      @rufus.join
+      cleanup_pid_file
+      AiSentinel.logger.info('AiSentinel stopped')
     end
 
     def stop
@@ -38,7 +43,19 @@ module AiSentinel
       runner.execute
     end
 
+    def pid_file
+      @pid_file ||= File.join(Dir.pwd, 'ai_sentinel.pid')
+    end
+
     private
+
+    def write_pid_file
+      File.write(pid_file, Process.pid.to_s)
+    end
+
+    def cleanup_pid_file
+      FileUtils.rm_f(pid_file)
+    end
 
     def register_workflows
       registry.each do |name, workflow|

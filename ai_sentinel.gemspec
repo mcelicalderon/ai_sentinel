@@ -38,5 +38,6 @@ Gem::Specification.new do |spec|
   spec.add_dependency 'sequel', '~> 5.0'
   spec.add_dependency 'sqlite3', '~> 2.0'
   spec.add_dependency 'thor', '~> 1.0'
+  spec.add_dependency 'tzinfo-data', '~> 1.0'
   spec.add_dependency 'zeitwerk', '~> 2.6'
 end
