@@ -368,6 +368,25 @@ RSpec.describe AiSentinel::ConfigLoader do
       expect(safety[:max_output_bytes]).to eq(2048)
     end
 
+    it 'applies pid_file from global configuration' do
+      write_config(<<~YAML)
+        global:
+          pid_file: "/opt/var/run/ai_sentinel.pid"
+        workflows:
+          test:
+            schedule: "* * * * *"
+            steps:
+              - id: ping
+                action: shell_command
+                params:
+                  command: "echo hello"
+      YAML
+
+      described_class.new(config_path).load!
+
+      expect(AiSentinel.configuration.pid_file).to eq('/opt/var/run/ai_sentinel.pid')
+    end
+
     it 'applies max_tool_rounds from global configuration' do
       write_config(<<~YAML)
         global:

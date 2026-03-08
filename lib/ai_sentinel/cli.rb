@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require 'fileutils'
 require 'thor'
 require_relative 'cli/helpers'
 require_relative 'cli/context_display'
@@ -26,6 +27,25 @@ module AiSentinel
       Persistence::Database.setup(AiSentinel.configuration.database_path)
       handle_prompt_changes(daemonize: options[:daemonize])
       AiSentinel.start(daemonize: options[:daemonize])
+    end
+
+    desc 'stop', 'Stop a running daemon'
+    method_option :config, type: :string, aliases: '-c', desc: 'Path to config file'
+    def stop
+      load_config
+      pid_path = AiSentinel.configuration.pid_file
+
+      unless File.exist?(pid_path)
+        say "No PID file found at #{pid_path}. Is the daemon running?"
+        return
+      end
+
+      pid = File.read(pid_path).strip.to_i
+      Process.kill('TERM', pid)
+      say "Sent TERM signal to process #{pid}."
+    rescue Errno::ESRCH
+      say "Process #{pid} not found. Removing stale PID file."
+      FileUtils.rm_f(pid_path)
     end
 
     desc 'run WORKFLOW', 'Manually trigger a workflow immediately'

@@ -72,17 +72,21 @@ RSpec.describe AiSentinel::Scheduler, :db do
     end
 
     it 'cleans up PID file on stop' do
-      pid_path = scheduler.pid_file
-      File.write(pid_path, '12345')
+      Dir.mktmpdir do |tmpdir|
+        pid_path = File.join(tmpdir, 'ai_sentinel.pid')
+        configuration.pid_file = pid_path
+        File.write(pid_path, '12345')
 
-      scheduler.start
+        scheduler.start
 
-      expect(File.exist?(pid_path)).to be false
+        expect(File.exist?(pid_path)).to be false
+      end
     end
 
     context 'when daemonize is true' do
       before do
         allow(Process).to receive(:daemon)
+        allow(FileUtils).to receive(:mkdir_p)
         allow(File).to receive(:write)
       end
 

@@ -43,6 +43,10 @@ RSpec.describe AiSentinel::Configuration do
     it 'defaults max_tool_rounds to 10' do
       expect(config.max_tool_rounds).to eq(10)
     end
+
+    it 'defaults pid_file to home directory' do
+      expect(config.pid_file).to eq(File.join(Dir.home, '.ai_sentinel', 'ai_sentinel.pid'))
+    end
   end
 
   describe '#validate!' do

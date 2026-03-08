@@ -44,12 +44,13 @@ module AiSentinel
     end
 
     def pid_file
-      @pid_file ||= File.join(Dir.pwd, 'ai_sentinel.pid')
+      @pid_file ||= configuration.pid_file
     end
 
     private
 
     def write_pid_file
+      FileUtils.mkdir_p(File.dirname(pid_file))
       File.write(pid_file, Process.pid.to_s)
     end
 
