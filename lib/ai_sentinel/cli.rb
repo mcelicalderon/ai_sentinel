@@ -7,6 +7,10 @@ require_relative 'cli/prompt_change_handler'
 
 module AiSentinel
   class CLI < Thor
+    def self.exit_on_failure?
+      true
+    end
+
     include Helpers
     include ContextDisplay
     include PromptChangeHandler
