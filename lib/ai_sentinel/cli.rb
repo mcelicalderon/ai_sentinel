@@ -19,7 +19,7 @@ module AiSentinel
     desc 'run WORKFLOW', 'Manually trigger a workflow immediately'
     def run_workflow(workflow_name)
       load_config
-      AiSentinel.configuration.api_key ||= ENV.fetch('ANTHROPIC_API_KEY', nil)
+      AiSentinel.send(:resolve_api_key)
       AiSentinel.configuration.validate!
       Persistence::Database.setup(AiSentinel.configuration.database_path)
 
@@ -36,7 +36,7 @@ module AiSentinel
     desc 'validate', 'Validate the configuration file'
     def validate
       load_config
-      AiSentinel.configuration.api_key ||= ENV.fetch('ANTHROPIC_API_KEY', nil)
+      AiSentinel.send(:resolve_api_key)
       AiSentinel.configuration.validate!
       say "Config is valid. #{AiSentinel.registry.size} workflow(s) loaded."
       AiSentinel.registry.each do |name, workflow|

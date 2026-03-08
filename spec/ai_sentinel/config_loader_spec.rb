@@ -79,6 +79,28 @@ RSpec.describe AiSentinel::ConfigLoader do
       expect(AiSentinel.configuration.max_context_messages).to eq(25)
     end
 
+    it 'applies base_url from global configuration' do
+      write_config(<<~YAML)
+        global:
+          provider: openai
+          base_url: "http://localhost:11434/v1/chat/completions"
+
+        workflows:
+          test:
+            schedule: "* * * * *"
+            steps:
+              - id: ping
+                action: shell_command
+                params:
+                  command: "echo hello"
+      YAML
+
+      described_class.new(config_path).load!
+
+      expect(AiSentinel.configuration.base_url).to eq('http://localhost:11434/v1/chat/completions')
+      expect(AiSentinel.configuration.provider).to eq(:openai)
+    end
+
     it 'loads multiple workflows' do
       write_config(<<~YAML)
         workflows:

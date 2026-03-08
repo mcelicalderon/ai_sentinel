@@ -12,7 +12,7 @@ RSpec.describe AiSentinel do
       expect(described_class.configuration.model).to eq('claude-sonnet-4-20250514')
     end
 
-    it 'falls back to ANTHROPIC_API_KEY env var' do
+    it 'falls back to ANTHROPIC_API_KEY env var for anthropic provider' do
       allow(ENV).to receive(:fetch).with('ANTHROPIC_API_KEY', nil).and_return('env-key')
 
       described_class.configure do |config|
@@ -20,6 +20,16 @@ RSpec.describe AiSentinel do
       end
 
       expect(described_class.configuration.api_key).to eq('env-key')
+    end
+
+    it 'falls back to OPENAI_API_KEY env var for openai provider' do
+      allow(ENV).to receive(:fetch).with('OPENAI_API_KEY', nil).and_return('openai-env-key')
+
+      described_class.configure do |config|
+        config.provider = :openai
+      end
+
+      expect(described_class.configuration.api_key).to eq('openai-env-key')
     end
   end
 

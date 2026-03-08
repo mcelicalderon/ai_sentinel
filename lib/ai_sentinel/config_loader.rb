@@ -97,6 +97,7 @@ module AiSentinel
         config.model = global['model'] if global['model']
         config.database_path = File.expand_path(global['database']) if global['database']
         config.max_context_messages = global['max_context_messages'] if global['max_context_messages']
+        config.base_url = global['base_url'] if global['base_url']
       end
     end
 

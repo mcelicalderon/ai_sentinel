@@ -24,7 +24,7 @@ module AiSentinel
 
     def configure
       yield(configuration)
-      configuration.api_key ||= ENV.fetch('ANTHROPIC_API_KEY', nil)
+      resolve_api_key
       configuration
     end
 
@@ -33,7 +33,7 @@ module AiSentinel
     end
 
     def start(daemonize: false)
-      configuration.api_key ||= ENV.fetch('ANTHROPIC_API_KEY', nil)
+      resolve_api_key
       configuration.validate!
       Persistence::Database.setup(configuration.database_path)
       scheduler = Scheduler.new(registry, configuration)
@@ -48,6 +48,10 @@ module AiSentinel
 
     def logger
       configuration.logger
+    end
+
+    def resolve_api_key
+      configuration.api_key ||= ENV.fetch(configuration.env_key_name, nil)
     end
   end
 end

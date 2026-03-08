@@ -47,5 +47,54 @@ RSpec.describe AiSentinel::Configuration do
       config.provider = :anthropic
       expect { config.validate! }.not_to raise_error
     end
+
+    it 'accepts openai as a valid provider' do
+      config.api_key = 'test-key'
+      config.provider = :openai
+      expect { config.validate! }.not_to raise_error
+    end
+  end
+
+  describe '#model' do
+    it 'returns default model for anthropic' do
+      expect(config.model).to eq('claude-sonnet-4-20250514')
+    end
+
+    it 'returns default model for openai' do
+      config.provider = :openai
+      expect(config.model).to eq('gpt-4o')
+    end
+
+    it 'returns custom model when set' do
+      config.model = 'custom-model'
+      expect(config.model).to eq('custom-model')
+    end
+  end
+
+  describe '#env_key_name' do
+    it 'returns ANTHROPIC_API_KEY for anthropic provider' do
+      expect(config.env_key_name).to eq('ANTHROPIC_API_KEY')
+    end
+
+    it 'returns OPENAI_API_KEY for openai provider' do
+      config.provider = :openai
+      expect(config.env_key_name).to eq('OPENAI_API_KEY')
+    end
+  end
+
+  describe '#base_url' do
+    it 'returns default URL for anthropic' do
+      expect(config.base_url).to eq('https://api.anthropic.com/v1/messages')
+    end
+
+    it 'returns default URL for openai' do
+      config.provider = :openai
+      expect(config.base_url).to eq('https://api.openai.com/v1/chat/completions')
+    end
+
+    it 'returns custom URL when set' do
+      config.base_url = 'http://localhost:11434/v1/chat/completions'
+      expect(config.base_url).to eq('http://localhost:11434/v1/chat/completions')
+    end
   end
 end
