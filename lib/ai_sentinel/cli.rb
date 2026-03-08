@@ -116,11 +116,21 @@ module AiSentinel
     def clear_context(workflow_name, step_name)
       setup_database
       context_key = "#{workflow_name}:#{step_name}"
-      count = Persistence::Database.db[:conversation_messages]
-                                   .where(context_key: context_key)
-                                   .delete
+      msg_count = Persistence::Database.db[:conversation_messages]
+                                       .where(context_key: context_key)
+                                       .delete
+      sum_count = Persistence::Database.db[:context_summaries]
+                                       .where(context_key: context_key)
+                                       .delete
 
-      say "Cleared #{count} message(s) from context '#{context_key}'."
+      say "Cleared #{msg_count} message(s) and #{sum_count} summary(ies) from context '#{context_key}'."
+    end
+
+    desc 'summary WORKFLOW_NAME STEP_NAME', 'Show the compacted context summary for a workflow step'
+    option :db, type: :string, desc: 'Database path'
+    def summary(workflow_name, step_name)
+      setup_database
+      display_summary("#{workflow_name}:#{step_name}")
     end
 
     desc 'init', 'Generate a sample ai_sentinel.yml config file'

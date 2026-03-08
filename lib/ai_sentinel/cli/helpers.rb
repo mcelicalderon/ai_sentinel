@@ -55,6 +55,28 @@ module AiSentinel
         end
       end
 
+      def display_summary(context_key)
+        row = Persistence::Database.db[:context_summaries]
+                                   .where(context_key: context_key)
+                                   .first
+
+        unless row
+          say "No summary found for #{context_key}."
+          return
+        end
+
+        msg_count = Persistence::Database.db[:conversation_messages]
+                                         .where(context_key: context_key)
+                                         .count
+
+        say "Summary for #{context_key}:"
+        say "  Messages summarized: #{row[:messages_summarized_count]}"
+        say "  Recent messages:     #{msg_count}"
+        say "  Last updated:        #{row[:updated_at].strftime('%Y-%m-%d %H:%M:%S')}"
+        say ''
+        say row[:summary]
+      end
+
       def sample_config
         <<~YAML
           # ai_sentinel.yml

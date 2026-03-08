@@ -18,6 +18,10 @@ RSpec.describe AiSentinel::Persistence::Database, :db do
     it 'creates conversation_messages table' do
       expect(described_class.db.table_exists?(:conversation_messages)).to be true
     end
+
+    it 'creates context_summaries table' do
+      expect(described_class.db.table_exists?(:context_summaries)).to be true
+    end
   end
 
   describe '.disconnect' do

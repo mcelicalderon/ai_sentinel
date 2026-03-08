@@ -19,7 +19,8 @@ module AiSentinel
       openai: 'https://api.openai.com/v1/chat/completions'
     }.freeze
 
-    attr_accessor :provider, :api_key, :database_path, :logger, :max_context_messages
+    attr_accessor :provider, :api_key, :database_path, :logger, :max_context_messages,
+                  :compaction_threshold, :compaction_buffer
     attr_writer :model, :base_url
 
     def initialize
@@ -30,6 +31,8 @@ module AiSentinel
       @database_path = File.join(Dir.home, '.ai_sentinel', 'db.sqlite3')
       @logger = default_logger
       @max_context_messages = 50
+      @compaction_threshold = 40
+      @compaction_buffer = 10
     end
 
     def model
@@ -47,6 +50,7 @@ module AiSentinel
     def inspect
       "#<#{self.class} provider=#{provider} model=#{model} base_url=#{base_url} " \
         "database_path=#{database_path} max_context_messages=#{max_context_messages} " \
+        "compaction_threshold=#{compaction_threshold} compaction_buffer=#{compaction_buffer} " \
         "api_key=#{api_key ? '[FILTERED]' : 'nil'}>"
     end
     alias to_s inspect

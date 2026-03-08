@@ -36,6 +36,7 @@ module AiSentinel
           create_execution_logs_table
           create_step_results_table
           create_conversation_messages_table
+          create_context_summaries_table
         end
 
         def create_execution_logs_table
@@ -77,6 +78,19 @@ module AiSentinel
             String :context_key, null: false
             Text :user_message, null: false
             Text :assistant_message, null: false
+            Time :created_at, null: false
+            Time :updated_at, null: false
+
+            index :context_key
+          end
+        end
+
+        def create_context_summaries_table
+          @db.create_table?(:context_summaries) do
+            primary_key :id
+            String :context_key, null: false, unique: true
+            Text :summary, null: false
+            Integer :messages_summarized_count, null: false, default: 0
             Time :created_at, null: false
             Time :updated_at, null: false
 

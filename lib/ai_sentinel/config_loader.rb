@@ -7,6 +7,16 @@ module AiSentinel
     DEFAULT_CONFIG_FILES = %w[ai_sentinel.yml ai_sentinel.yaml].freeze
     VALID_ACTIONS = %w[http_get http_post ai_prompt shell_command].freeze
 
+    GLOBAL_CONFIG_MAP = {
+      'provider' => ->(config, val) { config.provider = val.to_sym },
+      'model' => ->(config, val) { config.model = val },
+      'database' => ->(config, val) { config.database_path = File.expand_path(val) },
+      'max_context_messages' => ->(config, val) { config.max_context_messages = val },
+      'base_url' => ->(config, val) { config.base_url = val },
+      'compaction_threshold' => ->(config, val) { config.compaction_threshold = val },
+      'compaction_buffer' => ->(config, val) { config.compaction_buffer = val }
+    }.freeze
+
     attr_reader :config_path, :raw_config
 
     def initialize(config_path = nil)
@@ -93,11 +103,9 @@ module AiSentinel
       global = raw_config['global'] || {}
 
       AiSentinel.configure do |config|
-        config.provider = global['provider'].to_sym if global['provider']
-        config.model = global['model'] if global['model']
-        config.database_path = File.expand_path(global['database']) if global['database']
-        config.max_context_messages = global['max_context_messages'] if global['max_context_messages']
-        config.base_url = global['base_url'] if global['base_url']
+        GLOBAL_CONFIG_MAP.each do |key, setter|
+          setter.call(config, global[key]) if global[key]
+        end
       end
     end
 
