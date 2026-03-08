@@ -11,6 +11,19 @@ RSpec.describe AiSentinel::Providers::Anthropic, :db do
 
   before { AiSentinel.instance_variable_set(:@configuration, configuration) }
 
+  def insert_messages(context_key, count)
+    ctx = AiSentinel::Persistence::Database.find_or_create_context(context_key)
+    count.times do |i|
+      AiSentinel::Persistence::Database.db[:conversation_messages].insert(
+        conversation_context_id: ctx[:id],
+        user_message: "Question #{i}",
+        assistant_message: "Answer #{i}",
+        created_at: Time.now + i,
+        updated_at: Time.now + i
+      )
+    end
+  end
+
   describe '#chat' do
     it 'sends a request to the Anthropic API' do
       stub_request(:post, 'https://api.anthropic.com/v1/messages')
@@ -55,15 +68,7 @@ RSpec.describe AiSentinel::Providers::Anthropic, :db do
     end
 
     it 'prunes old context messages beyond max_context_messages' do
-      4.times do |i|
-        AiSentinel::Persistence::Database.db[:conversation_messages].insert(
-          context_key: 'test:analyze',
-          user_message: "Question #{i}",
-          assistant_message: "Answer #{i}",
-          created_at: Time.now + i,
-          updated_at: Time.now + i
-        )
-      end
+      insert_messages('test:analyze', 4)
 
       stub_request(:post, 'https://api.anthropic.com/v1/messages')
         .to_return(
@@ -76,23 +81,16 @@ RSpec.describe AiSentinel::Providers::Anthropic, :db do
       provider = described_class.new(configuration: configuration)
       provider.chat(prompt: 'New question', workflow_name: 'test', step_name: 'analyze')
 
+      ctx = AiSentinel::Persistence::Database.db[:conversation_contexts].where(context_key: 'test:analyze').first
       count = AiSentinel::Persistence::Database.db[:conversation_messages]
-                                               .where(context_key: 'test:analyze')
+                                               .where(conversation_context_id: ctx[:id])
                                                .count
 
       expect(count).to be <= configuration.max_context_messages
     end
 
     it 'retries with reduced context on token overflow (400)' do
-      4.times do |i|
-        AiSentinel::Persistence::Database.db[:conversation_messages].insert(
-          context_key: 'test:analyze',
-          user_message: "Q#{i}",
-          assistant_message: "A#{i}",
-          created_at: Time.now + i,
-          updated_at: Time.now + i
-        )
-      end
+      insert_messages('test:analyze', 4)
 
       overflow_body = {
         error: { type: 'invalid_request_error', message: 'prompt is too long: too many tokens' }

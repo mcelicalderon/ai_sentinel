@@ -23,10 +23,11 @@ module AiSentinel
 
     DEFAULT_LOG_FILE_SIZE = 10 * 1024 * 1024
     DEFAULT_LOG_FILES = 5
+    VALID_PROMPT_CHANGE_POLICIES = %i[ask keep drop].freeze
 
     attr_accessor :provider, :api_key, :database_path, :max_context_messages,
                   :compaction_threshold, :compaction_buffer, :log_file,
-                  :log_file_size, :log_files
+                  :log_file_size, :log_files, :on_prompt_change
     attr_writer :model, :base_url, :logger
 
     def initialize
@@ -42,6 +43,7 @@ module AiSentinel
       @max_context_messages = 50
       @compaction_threshold = 40
       @compaction_buffer = 10
+      @on_prompt_change = :ask
     end
 
     def logger

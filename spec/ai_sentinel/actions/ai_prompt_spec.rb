@@ -67,8 +67,10 @@ RSpec.describe AiSentinel::Actions::AiPrompt, :db do
       action = described_class.new(step: step, context: context, configuration: configuration)
       action.call
 
+      ctx = AiSentinel::Persistence::Database.db[:conversation_contexts]
+                                             .where(context_key: 'test_workflow:analyze').first
       messages = AiSentinel::Persistence::Database.db[:conversation_messages]
-                                                  .where(context_key: 'test_workflow:analyze')
+                                                  .where(conversation_context_id: ctx[:id])
                                                   .all
 
       expect(messages.size).to eq(1)
@@ -77,8 +79,9 @@ RSpec.describe AiSentinel::Actions::AiPrompt, :db do
     end
 
     it 'includes previous context in subsequent calls' do
+      ctx = AiSentinel::Persistence::Database.find_or_create_context('test_workflow:analyze')
       AiSentinel::Persistence::Database.db[:conversation_messages].insert(
-        context_key: 'test_workflow:analyze',
+        conversation_context_id: ctx[:id],
         user_message: 'Previous question',
         assistant_message: 'Previous answer',
         created_at: Time.now,

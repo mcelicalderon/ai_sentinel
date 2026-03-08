@@ -13,7 +13,8 @@ module AiSentinel
         @configuration = configuration
       end
 
-      def chat(prompt:, system: nil, model: nil, workflow_name: nil, step_name: nil, remember: true)
+      def chat(prompt:, system: nil, model: nil, workflow_name: nil, step_name: nil, remember: true,
+               prompt_template: nil, system_template: nil)
         raise NotImplementedError, "#{self.class}#chat must be implemented"
       end
 
@@ -43,17 +44,19 @@ module AiSentinel
         return [] unless Persistence::Database.connected?
 
         limit ||= configuration.max_context_messages
+        ctx = Persistence::Database.db[:conversation_contexts].where(context_key: context_key).first
+        return [] unless ctx
+
         messages = []
 
-        summary = load_summary(context_key)
-        if summary
-          messages << { 'role' => 'user', 'content' => "Context from previous conversations:\n#{summary}" }
+        if ctx[:summary]
+          messages << { 'role' => 'user', 'content' => "Context from previous conversations:\n#{ctx[:summary]}" }
           messages << { 'role' => 'assistant',
                         'content' => 'Understood, I have the context from previous conversations.' }
         end
 
         Persistence::Database.db[:conversation_messages]
-                             .where(context_key: context_key)
+                             .where(conversation_context_id: ctx[:id])
                              .order(:created_at)
                              .last(limit)
                              .each do |row|
@@ -64,26 +67,29 @@ module AiSentinel
         messages
       end
 
-      def load_summary(context_key)
-        row = Persistence::Database.db[:context_summaries]
-                                   .where(context_key: context_key)
-                                   .first
-        row&.fetch(:summary)
-      end
-
-      def save_context(context_key, user_message, assistant_message)
+      def save_context(context_key, user_message, assistant_message, prompt_template: nil, system_template: nil)
         return unless Persistence::Database.connected?
 
+        ctx = Persistence::Database.find_or_create_context(context_key)
+
         Persistence::Database.db[:conversation_messages].insert(
-          context_key: context_key,
+          conversation_context_id: ctx[:id],
           user_message: user_message,
           assistant_message: assistant_message,
           created_at: Time.now,
           updated_at: Time.now
         )
 
-        prune_old_messages(context_key)
+        save_prompt_hash(context_key, prompt_template, system_template) if prompt_template
+        prune_old_messages(ctx[:id])
         compact_context(context_key)
+      end
+
+      def save_prompt_hash(context_key, prompt_template, system_template)
+        PromptChangeDetector.save_hash(
+          context_key,
+          PromptChangeDetector.compute_hash(prompt_template, system_template)
+        )
       end
 
       def compact_context(context_key)
@@ -92,21 +98,21 @@ module AiSentinel
         AiSentinel.logger.warn("Context compaction failed for '#{context_key}': #{e.message}")
       end
 
-      def prune_old_messages(context_key)
+      def prune_old_messages(context_id)
         count = Persistence::Database.db[:conversation_messages]
-                                     .where(context_key: context_key)
+                                     .where(conversation_context_id: context_id)
                                      .count
 
         return unless count > configuration.max_context_messages
 
         oldest_to_keep = Persistence::Database.db[:conversation_messages]
-                                              .where(context_key: context_key)
+                                              .where(conversation_context_id: context_id)
                                               .order(Sequel.desc(:created_at))
                                               .limit(configuration.max_context_messages)
                                               .select(:id)
 
         Persistence::Database.db[:conversation_messages]
-                             .where(context_key: context_key)
+                             .where(conversation_context_id: context_id)
                              .exclude(id: oldest_to_keep)
                              .delete
       end

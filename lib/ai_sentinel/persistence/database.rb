@@ -25,6 +25,18 @@ module AiSentinel
           !@db.nil?
         end
 
+        def find_or_create_context(context_key)
+          row = @db[:conversation_contexts].where(context_key: context_key).first
+          return row if row
+
+          now = Time.now
+          id = @db[:conversation_contexts].insert(
+            context_key: context_key, messages_summarized_count: 0,
+            created_at: now, updated_at: now
+          )
+          @db[:conversation_contexts].where(id: id).first
+        end
+
         def disconnect
           @db&.disconnect
           @db = nil
@@ -35,8 +47,8 @@ module AiSentinel
         def run_migrations
           create_execution_logs_table
           create_step_results_table
+          create_conversation_contexts_table
           create_conversation_messages_table
-          create_context_summaries_table
         end
 
         def create_execution_logs_table
@@ -72,12 +84,13 @@ module AiSentinel
           end
         end
 
-        def create_conversation_messages_table
-          @db.create_table?(:conversation_messages) do
+        def create_conversation_contexts_table
+          @db.create_table?(:conversation_contexts) do
             primary_key :id
-            String :context_key, null: false
-            Text :user_message, null: false
-            Text :assistant_message, null: false
+            String :context_key, null: false, unique: true
+            String :prompt_hash
+            Text :summary
+            Integer :messages_summarized_count, null: false, default: 0
             Time :created_at, null: false
             Time :updated_at, null: false
 
@@ -85,16 +98,16 @@ module AiSentinel
           end
         end
 
-        def create_context_summaries_table
-          @db.create_table?(:context_summaries) do
+        def create_conversation_messages_table
+          @db.create_table?(:conversation_messages) do
             primary_key :id
-            String :context_key, null: false, unique: true
-            Text :summary, null: false
-            Integer :messages_summarized_count, null: false, default: 0
+            foreign_key :conversation_context_id, :conversation_contexts, null: false
+            Text :user_message, null: false
+            Text :assistant_message, null: false
             Time :created_at, null: false
             Time :updated_at, null: false
 
-            index :context_key
+            index :conversation_context_id
           end
         end
       end

@@ -6,7 +6,8 @@ require 'json'
 module AiSentinel
   module Providers
     class Openai < Base
-      def chat(prompt:, system: nil, model: nil, workflow_name: nil, step_name: nil, remember: true)
+      def chat(prompt:, system: nil, model: nil, workflow_name: nil, step_name: nil, remember: true,
+               prompt_template: nil, system_template: nil)
         model ||= configuration.model
         context_key = "#{workflow_name}:#{step_name}"
 
@@ -16,7 +17,10 @@ module AiSentinel
         end
 
         assistant_text = extract_text(response_data)
-        save_context(context_key, prompt, assistant_text) if remember
+        if remember
+          save_context(context_key, prompt, assistant_text,
+                       prompt_template: prompt_template, system_template: system_template)
+        end
 
         Actions::AiPrompt::Result.new(
           response: assistant_text,

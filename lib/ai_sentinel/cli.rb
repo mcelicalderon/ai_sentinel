@@ -2,10 +2,14 @@
 
 require 'thor'
 require_relative 'cli/helpers'
+require_relative 'cli/context_display'
+require_relative 'cli/prompt_change_handler'
 
 module AiSentinel
   class CLI < Thor
     include Helpers
+    include ContextDisplay
+    include PromptChangeHandler
 
     class_option :config, type: :string, aliases: '-c', desc: 'Path to config file (default: ai_sentinel.yml)'
 
@@ -13,6 +17,10 @@ module AiSentinel
     option :daemonize, type: :boolean, default: false, aliases: '-d', desc: 'Run in background'
     def start
       load_config
+      AiSentinel.send(:resolve_api_key)
+      AiSentinel.configuration.validate!
+      Persistence::Database.setup(AiSentinel.configuration.database_path)
+      handle_prompt_changes(daemonize: options[:daemonize])
       AiSentinel.start(daemonize: options[:daemonize])
     end
 
@@ -22,6 +30,7 @@ module AiSentinel
       AiSentinel.send(:resolve_api_key)
       AiSentinel.configuration.validate!
       Persistence::Database.setup(AiSentinel.configuration.database_path)
+      handle_prompt_changes(daemonize: false)
 
       scheduler = Scheduler.new(AiSentinel.registry, AiSentinel.configuration)
       context = scheduler.trigger(workflow_name)
@@ -88,42 +97,14 @@ module AiSentinel
     option :limit, type: :numeric, default: 10, aliases: '-n', desc: 'Number of messages'
     def context(workflow_name, step_name)
       setup_database
-      context_key = "#{workflow_name}:#{step_name}"
-      messages = Persistence::Database.db[:conversation_messages]
-                                      .where(context_key: context_key)
-                                      .order(Sequel.desc(:created_at))
-                                      .limit(options[:limit])
-                                      .all
-                                      .reverse
-
-      if messages.empty?
-        say "No conversation context found for #{context_key}."
-        return
-      end
-
-      say "Conversation context for #{context_key} (#{messages.size} messages):"
-      say ''
-      messages.each do |msg|
-        say "  [#{msg[:created_at].strftime('%Y-%m-%d %H:%M:%S')}]"
-        say "  User:      #{truncate(msg[:user_message], 200)}"
-        say "  Assistant: #{truncate(msg[:assistant_message], 200)}"
-        say ''
-      end
+      display_context("#{workflow_name}:#{step_name}", limit: options[:limit])
     end
 
     desc 'clear_context WORKFLOW_NAME STEP_NAME', 'Clear conversation context for a workflow step'
     option :db, type: :string, desc: 'Database path'
     def clear_context(workflow_name, step_name)
       setup_database
-      context_key = "#{workflow_name}:#{step_name}"
-      msg_count = Persistence::Database.db[:conversation_messages]
-                                       .where(context_key: context_key)
-                                       .delete
-      sum_count = Persistence::Database.db[:context_summaries]
-                                       .where(context_key: context_key)
-                                       .delete
-
-      say "Cleared #{msg_count} message(s) and #{sum_count} summary(ies) from context '#{context_key}'."
+      reset_context("#{workflow_name}:#{step_name}")
     end
 
     desc 'summary WORKFLOW_NAME STEP_NAME', 'Show the compacted context summary for a workflow step'

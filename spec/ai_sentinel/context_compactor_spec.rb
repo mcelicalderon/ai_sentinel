@@ -24,9 +24,10 @@ RSpec.describe AiSentinel::ContextCompactor, :db do
   before { AiSentinel.instance_variable_set(:@configuration, configuration) }
 
   def insert_messages(count)
+    ctx = AiSentinel::Persistence::Database.find_or_create_context(context_key)
     count.times do |i|
       AiSentinel::Persistence::Database.db[:conversation_messages].insert(
-        context_key: context_key,
+        conversation_context_id: ctx[:id],
         user_message: "Question #{i}",
         assistant_message: "Answer #{i}",
         created_at: Time.now + i,
@@ -42,8 +43,9 @@ RSpec.describe AiSentinel::ContextCompactor, :db do
       compactor = described_class.new(context_key: context_key, configuration: configuration)
       compactor.compact_if_needed
 
+      ctx = AiSentinel::Persistence::Database.db[:conversation_contexts].where(context_key: context_key).first
       count = AiSentinel::Persistence::Database.db[:conversation_messages]
-                                               .where(context_key: context_key)
+                                               .where(conversation_context_id: ctx[:id])
                                                .count
       expect(count).to eq(3)
     end
@@ -57,13 +59,14 @@ RSpec.describe AiSentinel::ContextCompactor, :db do
       compactor = described_class.new(context_key: context_key, configuration: configuration)
       compactor.compact_if_needed
 
+      ctx = AiSentinel::Persistence::Database.db[:conversation_contexts].where(context_key: context_key).first
       remaining = AiSentinel::Persistence::Database.db[:conversation_messages]
-                                                   .where(context_key: context_key)
+                                                   .where(conversation_context_id: ctx[:id])
                                                    .count
       expect(remaining).to eq(configuration.compaction_buffer)
     end
 
-    it 'creates a summary in the database' do
+    it 'stores a summary on the conversation context' do
       insert_messages(6)
 
       stub_request(:post, 'https://api.anthropic.com/v1/messages')
@@ -72,13 +75,10 @@ RSpec.describe AiSentinel::ContextCompactor, :db do
       compactor = described_class.new(context_key: context_key, configuration: configuration)
       compactor.compact_if_needed
 
-      summary = AiSentinel::Persistence::Database.db[:context_summaries]
-                                                 .where(context_key: context_key)
-                                                 .first
+      ctx = AiSentinel::Persistence::Database.db[:conversation_contexts].where(context_key: context_key).first
 
-      expect(summary).not_to be_nil
-      expect(summary[:summary]).to eq('Summary of previous conversations.')
-      expect(summary[:messages_summarized_count]).to eq(4)
+      expect(ctx[:summary]).to eq('Summary of previous conversations.')
+      expect(ctx[:messages_summarized_count]).to eq(4)
     end
 
     it 'preserves the most recent messages as the buffer' do
@@ -90,8 +90,9 @@ RSpec.describe AiSentinel::ContextCompactor, :db do
       compactor = described_class.new(context_key: context_key, configuration: configuration)
       compactor.compact_if_needed
 
+      ctx = AiSentinel::Persistence::Database.db[:conversation_contexts].where(context_key: context_key).first
       remaining = AiSentinel::Persistence::Database.db[:conversation_messages]
-                                                   .where(context_key: context_key)
+                                                   .where(conversation_context_id: ctx[:id])
                                                    .order(:created_at)
                                                    .all
 
@@ -99,13 +100,11 @@ RSpec.describe AiSentinel::ContextCompactor, :db do
     end
 
     it 'includes existing summary in the summarization prompt' do
-      AiSentinel::Persistence::Database.db[:context_summaries].insert(
-        context_key: context_key,
-        summary: 'Old summary of earlier conversations.',
-        messages_summarized_count: 10,
-        created_at: Time.now,
-        updated_at: Time.now
-      )
+      ctx = AiSentinel::Persistence::Database.find_or_create_context(context_key)
+      AiSentinel::Persistence::Database.db[:conversation_contexts]
+                                       .where(id: ctx[:id])
+                                       .update(summary: 'Old summary of earlier conversations.',
+                                               messages_summarized_count: 10, updated_at: Time.now)
 
       insert_messages(6)
 
@@ -116,11 +115,9 @@ RSpec.describe AiSentinel::ContextCompactor, :db do
       compactor = described_class.new(context_key: context_key, configuration: configuration)
       compactor.compact_if_needed
 
-      summary = AiSentinel::Persistence::Database.db[:context_summaries]
-                                                 .where(context_key: context_key)
-                                                 .first
+      ctx = AiSentinel::Persistence::Database.db[:conversation_contexts].where(context_key: context_key).first
 
-      expect(summary[:messages_summarized_count]).to eq(14)
+      expect(ctx[:messages_summarized_count]).to eq(14)
     end
 
     it 'sends remember: false for the summarization API call' do
@@ -132,10 +129,10 @@ RSpec.describe AiSentinel::ContextCompactor, :db do
       compactor = described_class.new(context_key: context_key, configuration: configuration)
       compactor.compact_if_needed
 
-      summary_messages = AiSentinel::Persistence::Database.db[:conversation_messages]
-                                                          .where(context_key: ':')
-                                                          .count
-      expect(summary_messages).to eq(0)
+      null_ctx = AiSentinel::Persistence::Database.db[:conversation_contexts]
+                                                  .where(context_key: ':')
+                                                  .first
+      expect(null_ctx).to be_nil
     end
   end
 end

@@ -19,6 +19,9 @@ module AiSentinel
 
     def compact_if_needed
       return unless Persistence::Database.connected?
+
+      @ctx = Persistence::Database.db[:conversation_contexts].where(context_key: context_key).first
+      return unless @ctx
       return unless compaction_needed?
 
       perform_compaction
@@ -32,7 +35,7 @@ module AiSentinel
 
     def message_count
       Persistence::Database.db[:conversation_messages]
-                           .where(context_key: context_key)
+                           .where(conversation_context_id: @ctx[:id])
                            .count
     end
 
@@ -40,12 +43,11 @@ module AiSentinel
       messages_to_summarize = fetch_oldest_messages
       return if messages_to_summarize.empty?
 
-      existing_summary = load_existing_summary
-      new_summary = generate_summary(messages_to_summarize, existing_summary)
+      new_summary = generate_summary(messages_to_summarize, @ctx[:summary])
 
       Persistence::Database.db.transaction do
         delete_summarized_messages(messages_to_summarize)
-        upsert_summary(new_summary, messages_to_summarize.size)
+        update_context_summary(new_summary, messages_to_summarize.size)
       end
 
       AiSentinel.logger.info(
@@ -60,17 +62,10 @@ module AiSentinel
       return [] if to_summarize <= 0
 
       Persistence::Database.db[:conversation_messages]
-                           .where(context_key: context_key)
+                           .where(conversation_context_id: @ctx[:id])
                            .order(:created_at)
                            .limit(to_summarize)
                            .all
-    end
-
-    def load_existing_summary
-      row = Persistence::Database.db[:context_summaries]
-                                 .where(context_key: context_key)
-                                 .first
-      row&.fetch(:summary)
     end
 
     def generate_summary(messages, existing_summary)
@@ -115,29 +110,14 @@ module AiSentinel
                            .delete
     end
 
-    def upsert_summary(summary_text, newly_summarized_count)
-      now = Time.now
-      existing = Persistence::Database.db[:context_summaries]
-                                      .where(context_key: context_key)
-                                      .first
-
-      if existing
-        Persistence::Database.db[:context_summaries]
-                             .where(context_key: context_key)
-                             .update(
-                               summary: summary_text,
-                               messages_summarized_count: existing[:messages_summarized_count] + newly_summarized_count,
-                               updated_at: now
-                             )
-      else
-        Persistence::Database.db[:context_summaries].insert(
-          context_key: context_key,
-          summary: summary_text,
-          messages_summarized_count: newly_summarized_count,
-          created_at: now,
-          updated_at: now
-        )
-      end
+    def update_context_summary(summary_text, newly_summarized_count)
+      Persistence::Database.db[:conversation_contexts]
+                           .where(id: @ctx[:id])
+                           .update(
+                             summary: summary_text,
+                             messages_summarized_count: @ctx[:messages_summarized_count] + newly_summarized_count,
+                             updated_at: Time.now
+                           )
     end
 
     def build_provider

@@ -17,7 +17,8 @@ module AiSentinel
       'compaction_buffer' => ->(config, val) { config.compaction_buffer = val },
       'log_file' => ->(config, val) { config.log_file = File.expand_path(val) },
       'log_file_size' => ->(config, val) { config.log_file_size = val },
-      'log_files' => ->(config, val) { config.log_files = val }
+      'log_files' => ->(config, val) { config.log_files = val },
+      'on_prompt_change' => ->(config, val) { config.on_prompt_change = val.to_sym }
     }.freeze
 
     attr_reader :config_path, :raw_config

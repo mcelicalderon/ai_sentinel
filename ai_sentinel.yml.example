@@ -12,6 +12,7 @@ global:
   model: claude-sonnet-4-20250514    # default model for your provider
   # database: ./ai_sentinel.sqlite3
   # max_context_messages: 50
+  # on_prompt_change: ask               # ask, keep, or drop
   # log_file: ./logs/ai_sentinel.log    # omit to log to STDOUT
   # log_file_size: 10485760             # 10 MB per file (default)
   # log_files: 5                        # rotated files to keep (default)

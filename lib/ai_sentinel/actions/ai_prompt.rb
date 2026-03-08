@@ -23,7 +23,9 @@ module AiSentinel
           model: model,
           workflow_name: context.workflow_name,
           step_name: step.name,
-          remember: remember
+          remember: remember,
+          prompt_template: step.params[:prompt],
+          system_template: step.params[:system]
         )
       end
 

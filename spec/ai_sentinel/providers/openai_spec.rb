@@ -19,6 +19,19 @@ RSpec.describe AiSentinel::Providers::Openai, :db do
 
   before { AiSentinel.instance_variable_set(:@configuration, configuration) }
 
+  def insert_messages(context_key, count)
+    ctx = AiSentinel::Persistence::Database.find_or_create_context(context_key)
+    count.times do |i|
+      AiSentinel::Persistence::Database.db[:conversation_messages].insert(
+        conversation_context_id: ctx[:id],
+        user_message: "Question #{i}",
+        assistant_message: "Answer #{i}",
+        created_at: Time.now + i,
+        updated_at: Time.now + i
+      )
+    end
+  end
+
   describe '#chat' do
     it 'sends a request to the OpenAI API' do
       stub_request(:post, 'https://api.openai.com/v1/chat/completions')
@@ -92,8 +105,10 @@ RSpec.describe AiSentinel::Providers::Openai, :db do
       provider = described_class.new(configuration: configuration)
       provider.chat(prompt: 'Hello', workflow_name: 'test', step_name: 'analyze')
 
+      ctx = AiSentinel::Persistence::Database.db[:conversation_contexts]
+                                             .where(context_key: 'test:analyze').first
       messages = AiSentinel::Persistence::Database.db[:conversation_messages]
-                                                  .where(context_key: 'test:analyze')
+                                                  .where(conversation_context_id: ctx[:id])
                                                   .all
 
       expect(messages.size).to eq(1)
@@ -102,8 +117,9 @@ RSpec.describe AiSentinel::Providers::Openai, :db do
     end
 
     it 'includes previous context in subsequent calls' do
+      ctx = AiSentinel::Persistence::Database.find_or_create_context('test:analyze')
       AiSentinel::Persistence::Database.db[:conversation_messages].insert(
-        context_key: 'test:analyze',
+        conversation_context_id: ctx[:id],
         user_message: 'Previous question',
         assistant_message: 'Previous answer',
         created_at: Time.now,
@@ -139,15 +155,7 @@ RSpec.describe AiSentinel::Providers::Openai, :db do
     end
 
     it 'prunes old context messages beyond max_context_messages' do
-      4.times do |i|
-        AiSentinel::Persistence::Database.db[:conversation_messages].insert(
-          context_key: 'test:analyze',
-          user_message: "Question #{i}",
-          assistant_message: "Answer #{i}",
-          created_at: Time.now + i,
-          updated_at: Time.now + i
-        )
-      end
+      insert_messages('test:analyze', 4)
 
       stub_request(:post, 'https://api.openai.com/v1/chat/completions')
         .to_return(status: 200, body: success_body, headers: { 'Content-Type' => 'application/json' })
@@ -155,23 +163,16 @@ RSpec.describe AiSentinel::Providers::Openai, :db do
       provider = described_class.new(configuration: configuration)
       provider.chat(prompt: 'New question', workflow_name: 'test', step_name: 'analyze')
 
+      ctx = AiSentinel::Persistence::Database.db[:conversation_contexts].where(context_key: 'test:analyze').first
       count = AiSentinel::Persistence::Database.db[:conversation_messages]
-                                               .where(context_key: 'test:analyze')
+                                               .where(conversation_context_id: ctx[:id])
                                                .count
 
       expect(count).to be <= configuration.max_context_messages
     end
 
     it 'retries with reduced context on token overflow' do
-      4.times do |i|
-        AiSentinel::Persistence::Database.db[:conversation_messages].insert(
-          context_key: 'test:analyze',
-          user_message: "Q#{i}",
-          assistant_message: "A#{i}",
-          created_at: Time.now + i,
-          updated_at: Time.now + i
-        )
-      end
+      insert_messages('test:analyze', 4)
 
       overflow_body = {
         error: { message: "This model's maximum context length is 8192 tokens" }

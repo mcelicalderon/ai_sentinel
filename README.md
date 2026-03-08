@@ -22,6 +22,7 @@ A lightweight Ruby gem for scheduling AI-driven tasks. Define workflows in a YAM
 - [CLI](#cli)
 - [Conversation memory](#conversation-memory)
   - [Context compaction](#context-compaction)
+  - [Prompt change detection](#prompt-change-detection)
   - [Token overflow recovery](#token-overflow-recovery)
 - [Logging](#logging)
 - [Development](#development)
@@ -34,6 +35,7 @@ A lightweight Ruby gem for scheduling AI-driven tasks. Define workflows in a YAM
 - **Multiple LLM providers** -- Anthropic Claude and OpenAI (plus any OpenAI-compatible API)
 - **Persistent conversation context** -- the AI remembers previous interactions across runs (stored in SQLite)
 - **Automatic context compaction** -- hierarchical summarization keeps context within token limits
+- **Prompt change detection** -- detects when prompt templates change and lets you decide what to do with existing context
 - **Token overflow recovery** -- automatic retry with reduced context on API token limit errors
 - **Conditional step execution** with `when` expressions
 - **Template interpolation** -- pass data between steps with `{{step_name.field}}` syntax
@@ -158,6 +160,7 @@ global:
   max_context_messages: 50
   compaction_threshold: 40
   compaction_buffer: 10
+  on_prompt_change: ask
   log_file: ./logs/ai_sentinel.log
   log_file_size: 10485760
   log_files: 5
@@ -172,6 +175,7 @@ global:
 | `max_context_messages` | `50` | Max conversation history per step |
 | `compaction_threshold` | `40` | Message count that triggers automatic context compaction |
 | `compaction_buffer` | `10` | Number of recent messages to keep verbatim after compaction |
+| `on_prompt_change` | `ask` | Action when a prompt template changes (`ask`, `keep`, `drop`) |
 | `log_file` | `nil` (STDOUT) | Log file path. When omitted, logs go to STDOUT. |
 | `log_file_size` | `10485760` (10 MB) | Max size per log file before rotation |
 | `log_files` | `5` | Number of rotated log files to keep |
@@ -462,6 +466,35 @@ Inspect the current summary with:
 ```bash
 ai_sentinel summary my_workflow my_step
 ```
+
+### Prompt change detection
+
+AiSentinel tracks a SHA256 hash of each step's prompt and system templates. When you modify a prompt template in `ai_sentinel.yml`, AiSentinel detects the change on the next `start` or `run` and asks what to do with the existing conversation context, since it was built with a different prompt.
+
+In interactive mode (the default), you'll see:
+
+```
+Prompt changed for 'my_workflow:analyze'.
+  1. Keep existing context
+  2. Clear context and start fresh
+  3. Abort
+  Choice [1/2/3]:
+```
+
+Whichever option you choose, the stored hash is updated so you won't be asked again until the prompt changes again.
+
+For daemon mode (`-d`) or CI environments where there is no TTY, set `on_prompt_change` in the config:
+
+```yaml
+global:
+  on_prompt_change: keep    # or 'drop' to auto-clear context on prompt changes
+```
+
+| Policy | Behavior |
+|--------|----------|
+| `ask` | Interactive prompt (default). Falls back to `keep` in daemon mode. |
+| `keep` | Silently keep existing context and update the stored hash. |
+| `drop` | Automatically clear context and summaries, then update the stored hash. |
 
 ### Token overflow recovery
 
