@@ -19,6 +19,8 @@ module AiSentinel
         AiSentinel.logger.info("AiSentinel started in background (#{registry.size} workflow(s))")
       else
         AiSentinel.logger.info("AiSentinel started (#{registry.size} workflow(s)). Press Ctrl+C to stop.")
+        trap('INT') { stop }
+        trap('TERM') { stop }
         @rufus.join
       end
     end
