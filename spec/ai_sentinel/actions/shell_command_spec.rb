@@ -39,6 +39,19 @@ RSpec.describe AiSentinel::Actions::ShellCommand do
       expect(result.stdout.strip).to eq('test_value')
     end
 
+    it 'preserves spaces in interpolated values without backslashes' do
+      prev_result = Struct.new(:body, keyword_init: true).new(body: 'hello world')
+      context.set(:fetch, prev_result)
+
+      step = AiSentinel::Step.new(name: :check, action: :shell_command, command: 'echo {{fetch.body}}')
+
+      action = described_class.new(step: step, context: context, configuration: configuration)
+      result = action.call
+
+      expect(result.stdout.strip).to eq('hello world')
+      expect(result.stdout).not_to include('\\')
+    end
+
     it 'escapes shell metacharacters in interpolated values' do
       prev_result = Struct.new(:body, keyword_init: true).new(body: '$(whoami) && rm -rf /')
       context.set(:fetch, prev_result)
@@ -48,6 +61,7 @@ RSpec.describe AiSentinel::Actions::ShellCommand do
       action = described_class.new(step: step, context: context, configuration: configuration)
       result = action.call
 
+      expect(result.stdout).to include('$(whoami)')
       expect(result.stdout).not_to include(ENV.fetch('USER', ''))
       expect(result.success).to be true
     end
@@ -63,6 +77,30 @@ RSpec.describe AiSentinel::Actions::ShellCommand do
 
       expect(result.stdout.strip).to include('whoami')
       expect(result.stdout).not_to include(ENV.fetch('USER', ''))
+    end
+
+    it 'handles values with parentheses' do
+      prev_result = Struct.new(:body, keyword_init: true).new(body: 'supports (9 languages)')
+      context.set(:fetch, prev_result)
+
+      step = AiSentinel::Step.new(name: :check, action: :shell_command, command: 'echo {{fetch.body}}')
+
+      action = described_class.new(step: step, context: context, configuration: configuration)
+      result = action.call
+
+      expect(result.stdout.strip).to eq('supports (9 languages)')
+    end
+
+    it 'handles values with single quotes' do
+      prev_result = Struct.new(:body, keyword_init: true).new(body: "it's a test")
+      context.set(:fetch, prev_result)
+
+      step = AiSentinel::Step.new(name: :check, action: :shell_command, command: 'echo {{fetch.body}}')
+
+      action = described_class.new(step: step, context: context, configuration: configuration)
+      result = action.call
+
+      expect(result.stdout.strip).to eq("it's a test")
     end
   end
 end

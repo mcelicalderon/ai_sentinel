@@ -30,8 +30,13 @@ module AiSentinel
           next "{{#{::Regexp.last_match(1)}.#{::Regexp.last_match(2)}}}" unless step_result
 
           raw = step_result.respond_to?(field) ? step_result.public_send(field).to_s : step_result.to_s
-          Shellwords.escape(raw)
+          escape_for_shell(raw)
         end
+      end
+
+      def escape_for_shell(value)
+        escaped = value.gsub("'") { "'\\''" }
+        "'#{escaped}'"
       end
 
       def execute_with_timeout(command, timeout)

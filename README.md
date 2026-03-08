@@ -354,6 +354,16 @@ Each action produces a result with specific fields. Use `{{step_id.field}}` in s
     timeout: 30
 ```
 
+Interpolated values in `shell_command` are automatically wrapped in single quotes to prevent shell injection. **Do not add your own quotes** around `{{...}}` placeholders — the escaping handles it:
+
+```yaml
+# Correct — no quotes around the placeholder
+command: 'echo {{summarize.response}} > output.txt'
+
+# Incorrect — extra quotes will appear in the output
+command: 'echo "{{summarize.response}}" > output.txt'
+```
+
 **Result fields:**
 
 | Field | Type | Description |
@@ -383,7 +393,7 @@ Use `{{step_id.field}}` to reference result fields from previous steps. The step
 | `ai_prompt` | `response`, `model`, `usage` |
 | `shell_command` | `stdout`, `stderr`, `exit_code`, `success` |
 
-If a referenced step hasn't run yet (e.g. it was skipped by a `when` condition), the `{{...}}` placeholder is left in the string unchanged. All interpolated values are converted to strings via `.to_s`. In `shell_command` steps, interpolated values are automatically shell-escaped to prevent injection.
+If a referenced step hasn't run yet (e.g. it was skipped by a `when` condition), the `{{...}}` placeholder is left in the string unchanged. All interpolated values are converted to strings via `.to_s`. In `shell_command` steps, interpolated values are automatically wrapped in single quotes to prevent shell injection — do not add your own quotes around `{{...}}` placeholders in shell commands.
 
 ## Conditions
 
