@@ -2,6 +2,31 @@
 
 A lightweight Ruby gem for scheduling AI-driven tasks. Define workflows in a YAML config file that run on a cron schedule, process data through LLMs, and take conditional actions based on the results. Designed to be self-hostable on minimal hardware -- just Ruby and SQLite.
 
+## Table of contents
+
+- [Features](#features)
+- [Installation](#installation)
+- [Quick start](#quick-start)
+- [Configuration](#configuration)
+  - [Global settings](#global-settings)
+  - [Providers](#providers)
+  - [Workflow definition](#workflow-definition)
+  - [Full example](#full-example)
+- [Actions](#actions)
+  - [`http_get`](#http_get)
+  - [`http_post`](#http_post)
+  - [`ai_prompt`](#ai_prompt)
+  - [`shell_command`](#shell_command)
+- [Template interpolation](#template-interpolation)
+- [Conditions](#conditions)
+- [CLI](#cli)
+- [Conversation memory](#conversation-memory)
+  - [Context compaction](#context-compaction)
+  - [Token overflow recovery](#token-overflow-recovery)
+- [Logging](#logging)
+- [Development](#development)
+- [License](#license)
+
 ## Features
 
 - **YAML configuration** -- define workflows, steps, and conditions in a simple config file
@@ -244,6 +269,8 @@ workflows:
 
 ## Actions
 
+Each action produces a result with specific fields. Use `{{step_id.field}}` in subsequent steps to reference these values (see [Template interpolation](#template-interpolation)).
+
 ### `http_get`
 
 ```yaml
@@ -255,7 +282,13 @@ workflows:
       Authorization: "Bearer token"
 ```
 
-Returns: `status`, `body`, `headers`
+**Result fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `status` | Integer | HTTP response status code (e.g. `200`, `404`) |
+| `body` | String | Response body content |
+| `headers` | Hash | Response headers |
 
 ### `http_post`
 
@@ -270,7 +303,13 @@ Returns: `status`, `body`, `headers`
       Authorization: "Bearer token"
 ```
 
-Returns: `status`, `body`, `headers`
+**Result fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `status` | Integer | HTTP response status code |
+| `body` | String | Response body content |
+| `headers` | Hash | Response headers |
 
 ### `ai_prompt`
 
@@ -284,7 +323,7 @@ Returns: `status`, `body`, `headers`
     remember: true
 ```
 
-Returns: `response`, `model`, `usage`
+**Params:**
 
 | Param | Default | Description |
 |-------|---------|-------------|
@@ -292,6 +331,14 @@ Returns: `response`, `model`, `usage`
 | `system` | `nil` | Optional system prompt. |
 | `model` | Global default | Override the model for this step. |
 | `remember` | `false` | When `true`, conversation history is persisted in SQLite and included in subsequent calls, enabling the AI to reference previous analyses across scheduled runs. |
+
+**Result fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `response` | String | The AI-generated text |
+| `model` | String | Model name used for generation |
+| `usage` | Hash | Token usage information |
 
 ### `shell_command`
 
@@ -303,11 +350,40 @@ Returns: `response`, `model`, `usage`
     timeout: 30
 ```
 
-Returns: `stdout`, `stderr`, `exit_code`, `success`
+**Result fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `stdout` | String | Standard output |
+| `stderr` | String | Standard error |
+| `exit_code` | Integer | Process exit code (`0` on success) |
+| `success` | Boolean | `true` if the command exited with code `0` |
+
+## Template interpolation
+
+Use `{{step_id.field}}` to reference result fields from previous steps. The step id comes from the `id` you defined in the workflow, and the field must be one of the result fields listed above for that action type.
+
+```yaml
+- id: summarize
+  action: ai_prompt
+  params:
+    prompt: "Status: {{check.stdout}}, Exit: {{check.exit_code}}"
+```
+
+**Quick reference:**
+
+| Action | Available fields |
+|--------|-----------------|
+| `http_get` | `status`, `body`, `headers` |
+| `http_post` | `status`, `body`, `headers` |
+| `ai_prompt` | `response`, `model`, `usage` |
+| `shell_command` | `stdout`, `stderr`, `exit_code`, `success` |
+
+If a referenced step hasn't run yet (e.g. it was skipped by a `when` condition), the `{{...}}` placeholder is left in the string unchanged. All interpolated values are converted to strings via `.to_s`. In `shell_command` steps, interpolated values are automatically shell-escaped to prevent injection.
 
 ## Conditions
 
-Use `when` to conditionally execute a step. Supports comparisons and string matching:
+Use `when` to conditionally execute a step. The condition is evaluated after template interpolation, so you can reference result fields from previous steps. Supports comparisons and string matching:
 
 ```yaml
 # Equality
@@ -324,17 +400,6 @@ when: '{{analyze.response}} contains "anomaly"'
 
 # String does not contain
 when: '{{check.stderr}} not_contains "error"'
-```
-
-## Template interpolation
-
-Use `{{step_id.field}}` to reference results from previous steps:
-
-```yaml
-- id: summarize
-  action: ai_prompt
-  params:
-    prompt: "Status: {{check.stdout}}, Exit: {{check.exit_code}}"
 ```
 
 ## CLI
