@@ -19,15 +19,15 @@ module AiSentinel
         AiSentinel.logger.info("AiSentinel started in background (#{registry.size} workflow(s))")
       else
         AiSentinel.logger.info("AiSentinel started (#{registry.size} workflow(s)). Press Ctrl+C to stop.")
-        trap('INT') { stop }
-        trap('TERM') { stop }
+        trap('INT') { Thread.new { stop } }
+        trap('TERM') { Thread.new { stop } }
         @rufus.join
+        AiSentinel.logger.info('AiSentinel stopped')
       end
     end
 
     def stop
       @rufus.shutdown
-      AiSentinel.logger.info('AiSentinel stopped')
     end
 
     def trigger(workflow_name)
