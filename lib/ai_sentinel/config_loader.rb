@@ -8,6 +8,7 @@ module AiSentinel
     VALID_ACTIONS = %w[http_get http_post ai_prompt shell_command].freeze
 
     GLOBAL_CONFIG_MAP = {
+      'api_key' => ->(config, val) { config.api_key = val },
       'provider' => ->(config, val) { config.provider = val.to_sym },
       'model' => ->(config, val) { config.model = val },
       'database' => ->(config, val) { config.database_path = File.expand_path(val) },
