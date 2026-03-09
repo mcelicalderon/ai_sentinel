@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require 'dotenv'
 require 'fileutils'
 require 'rufus-scheduler'
 
@@ -59,6 +60,7 @@ module AiSentinel
 
       FileUtils.mkdir_p(dir)
       Dir.chdir(dir)
+      Dotenv.load
     end
 
     def write_pid_file
