@@ -1,5 +1,7 @@
 # AiSentinel
 
+[![Gem Version](https://badge.fury.io/rb/ai_sentinel.svg?icon=si%3Arubygems)](https://badge.fury.io/rb/ai_sentinel)
+
 A lightweight Ruby gem for scheduling AI-driven tasks. Define workflows in a YAML config file that run on a cron schedule, process data through LLMs, and take conditional actions based on the results. Designed to be self-hostable on minimal hardware -- just Ruby and SQLite.
 
 ## Table of contents
