@@ -22,6 +22,7 @@ module AiSentinel
     option :daemonize, type: :boolean, default: false, aliases: '-d', desc: 'Run in background'
     def start
       load_config
+      apply_working_directory_and_load_env
       AiSentinel.send(:resolve_api_key)
       AiSentinel.configuration.validate!
       Persistence::Database.setup(AiSentinel.configuration.database_path)
@@ -51,6 +52,7 @@ module AiSentinel
     desc 'run WORKFLOW', 'Manually trigger a workflow immediately'
     def run_workflow(workflow_name)
       load_config
+      apply_working_directory_and_load_env
       AiSentinel.send(:resolve_api_key)
       AiSentinel.configuration.validate!
       Persistence::Database.setup(AiSentinel.configuration.database_path)
@@ -69,6 +71,7 @@ module AiSentinel
     desc 'validate', 'Validate the configuration file'
     def validate
       load_config
+      apply_working_directory_and_load_env
       AiSentinel.send(:resolve_api_key)
       AiSentinel.configuration.validate!
       say "Config is valid. #{AiSentinel.registry.size} workflow(s) loaded."

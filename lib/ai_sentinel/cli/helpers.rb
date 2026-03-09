@@ -10,6 +10,15 @@ module AiSentinel
         loader.load!
       end
 
+      def apply_working_directory_and_load_env
+        dir = AiSentinel.configuration.working_directory
+        return unless dir
+
+        FileUtils.mkdir_p(dir)
+        Dir.chdir(dir)
+        Dotenv.load
+      end
+
       def setup_database
         if options[:config]
           load_config
