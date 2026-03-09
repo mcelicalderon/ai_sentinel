@@ -44,6 +44,10 @@ RSpec.describe AiSentinel::Configuration do
       expect(config.max_tool_rounds).to eq(10)
     end
 
+    it 'defaults working_directory to nil' do
+      expect(config.working_directory).to be_nil
+    end
+
     it 'defaults pid_file to home directory' do
       expect(config.pid_file).to eq(File.join(Dir.home, '.ai_sentinel', 'ai_sentinel.pid'))
     end

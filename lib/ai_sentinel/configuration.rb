@@ -31,7 +31,8 @@ module AiSentinel
     attr_accessor :provider, :api_key, :database_path, :max_context_messages,
                   :compaction_threshold, :compaction_buffer, :log_file,
                   :log_file_size, :log_files, :on_prompt_change,
-                  :tool_safety, :max_tool_rounds, :pid_file
+                  :tool_safety, :max_tool_rounds, :pid_file,
+                  :working_directory
     attr_writer :model, :base_url, :logger
 
     def initialize
@@ -51,6 +52,7 @@ module AiSentinel
       @tool_safety = nil
       @max_tool_rounds = DEFAULT_MAX_TOOL_ROUNDS
       @pid_file = File.join(Dir.home, '.ai_sentinel', 'ai_sentinel.pid')
+      @working_directory = nil
     end
 
     def logger

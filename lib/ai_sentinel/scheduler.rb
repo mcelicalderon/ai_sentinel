@@ -13,6 +13,8 @@ module AiSentinel
     end
 
     def start(daemonize: false)
+      apply_working_directory
+
       if daemonize
         Process.daemon(true, true)
         write_pid_file
@@ -36,6 +38,8 @@ module AiSentinel
     end
 
     def trigger(workflow_name)
+      apply_working_directory
+
       workflow = registry[workflow_name.to_s] || registry[workflow_name.to_sym]
       raise Error, "Unknown workflow: #{workflow_name}" unless workflow
 
@@ -48,6 +52,14 @@ module AiSentinel
     end
 
     private
+
+    def apply_working_directory
+      dir = configuration.working_directory
+      return unless dir
+
+      FileUtils.mkdir_p(dir)
+      Dir.chdir(dir)
+    end
 
     def write_pid_file
       FileUtils.mkdir_p(File.dirname(pid_file))

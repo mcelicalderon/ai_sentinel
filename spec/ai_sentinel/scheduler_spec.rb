@@ -83,6 +83,31 @@ RSpec.describe AiSentinel::Scheduler, :db do
       end
     end
 
+    context 'when working_directory is set' do
+      before do
+        allow(FileUtils).to receive(:mkdir_p)
+        allow(Dir).to receive(:chdir)
+      end
+
+      it 'changes to the configured directory' do
+        configuration.working_directory = '/opt/etc/ai_sentinel'
+
+        scheduler.start
+
+        expect(Dir).to have_received(:chdir).with('/opt/etc/ai_sentinel')
+      end
+    end
+
+    context 'when working_directory is nil' do
+      it 'does not change directory' do
+        allow(Dir).to receive(:chdir)
+
+        scheduler.start
+
+        expect(Dir).not_to have_received(:chdir)
+      end
+    end
+
     context 'when daemonize is true' do
       before do
         allow(Process).to receive(:daemon)

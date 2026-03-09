@@ -20,6 +20,7 @@ A lightweight Ruby gem for scheduling AI-driven tasks. Define workflows in a YAM
 - [Template interpolation](#template-interpolation)
 - [Conditions](#conditions)
 - [CLI](#cli)
+  - [Daemon mode](#daemon-mode)
 - [Tool use (AI agent autonomy)](#tool-use-ai-agent-autonomy)
   - [How tool use works](#how-tool-use-works)
   - [Available tools](#available-tools)
@@ -106,6 +107,15 @@ bundle exec ai_sentinel version
 
 ### 1. Set your API key
 
+**Option A: In the YAML config** (recommended for headless/embedded systems):
+
+```yaml
+global:
+  api_key: sk-ant-...
+```
+
+**Option B: Via environment variable** (recommended for development):
+
 Create a `.env` file in the directory where you'll run AiSentinel:
 
 ```bash
@@ -115,6 +125,8 @@ echo "ANTHROPIC_API_KEY=sk-ant-..." > .env
 # For OpenAI
 echo "OPENAI_API_KEY=sk-..." > .env
 ```
+
+The YAML `api_key` takes priority. If not set, AiSentinel falls back to the environment variable for the configured provider (`ANTHROPIC_API_KEY` or `OPENAI_API_KEY`).
 
 ### 2. Generate a config file
 
@@ -156,12 +168,13 @@ ai_sentinel validate -c /path/to/my_config.yml
 
 ## Configuration
 
-All configuration is done in `ai_sentinel.yml`. API keys are loaded from environment variables (via `.env` file). **Never put API keys in the YAML config.**
+All configuration is done in `ai_sentinel.yml`. API keys can be set in the YAML config or loaded from environment variables (via `.env` file or shell profile). The YAML `api_key` takes priority over the environment variable.
 
 ### Global settings
 
 ```yaml
 global:
+  api_key: sk-ant-...
   provider: anthropic
   model: claude-sonnet-4-20250514
   database: ./ai_sentinel.sqlite3
@@ -170,6 +183,8 @@ global:
   compaction_threshold: 40
   compaction_buffer: 10
   on_prompt_change: ask
+  working_directory: /opt/etc/ai_sentinel
+  pid_file: /opt/var/run/ai_sentinel.pid
   log_file: ./logs/ai_sentinel.log
   log_file_size: 10485760
   log_files: 5
@@ -189,6 +204,7 @@ global:
 
 | Key | Default | Description |
 |-----|---------|-------------|
+| `api_key` | `nil` | API key for the configured provider. Takes priority over the environment variable. |
 | `provider` | `anthropic` | LLM provider (`anthropic` or `openai`) |
 | `model` | Provider-specific (see below) | Default model for AI steps |
 | `database` | `~/.ai_sentinel/db.sqlite3` | SQLite database path |
@@ -197,6 +213,8 @@ global:
 | `compaction_threshold` | `40` | Message count that triggers automatic context compaction |
 | `compaction_buffer` | `10` | Number of recent messages to keep verbatim after compaction |
 | `on_prompt_change` | `ask` | Action when a prompt template changes (`ask`, `keep`, `drop`) |
+| `working_directory` | `nil` | Working directory for the process. When set, the process `chdir`s to this directory on both `start` and `run`. Affects where relative file paths resolve (logs, database, files created by AI agents, shell command output). |
+| `pid_file` | `~/.ai_sentinel/ai_sentinel.pid` | Path to the PID file written when running in daemon mode (`-d`). |
 | `log_file` | `nil` (STDOUT) | Log file path. When omitted, logs go to STDOUT. |
 | `log_file_size` | `10485760` (10 MB) | Max size per log file before rotation |
 | `log_files` | `5` | Number of rotated log files to keep |
@@ -218,10 +236,7 @@ AiSentinel supports two providers out of the box. Each has sensible defaults:
 global:
   provider: anthropic
   model: claude-sonnet-4-20250514    # optional, this is the default
-```
-
-```bash
-echo "ANTHROPIC_API_KEY=sk-ant-..." > .env
+  api_key: sk-ant-...                # or set ANTHROPIC_API_KEY env var
 ```
 
 #### OpenAI
@@ -230,10 +245,7 @@ echo "ANTHROPIC_API_KEY=sk-ant-..." > .env
 global:
   provider: openai
   model: gpt-4o                      # optional, this is the default
-```
-
-```bash
-echo "OPENAI_API_KEY=sk-..." > .env
+  api_key: sk-...                    # or set OPENAI_API_KEY env var
 ```
 
 #### OpenAI-compatible APIs (Ollama, LM Studio, Azure, etc.)
@@ -481,7 +493,8 @@ String values on the right side can be wrapped in double or single quotes. Numer
 
 ```
 ai_sentinel start                    Start the scheduler
-ai_sentinel start -d                 Start in background mode
+ai_sentinel start -d                 Start in daemon (background) mode
+ai_sentinel stop                     Stop a running daemon
 ai_sentinel run WORKFLOW             Manually trigger a workflow
 ai_sentinel validate                 Validate config file
 ai_sentinel list                     List workflows
@@ -497,8 +510,27 @@ ai_sentinel -v                       Show version
 
 # Use a custom config path (works with any command)
 ai_sentinel start -c path/to/config.yml
+ai_sentinel stop -c path/to/config.yml
 ai_sentinel run my_workflow -c path/to/config.yml
 ```
+
+### Daemon mode
+
+Use `-d` to run AiSentinel as a background daemon:
+
+```bash
+ai_sentinel start -d -c /path/to/config.yml
+```
+
+This detaches the process, writes a PID file (see `pid_file` in [Global settings](#global-settings)), and continues running in the background. Stop it with:
+
+```bash
+ai_sentinel stop -c /path/to/config.yml
+```
+
+The `stop` command reads the PID file, sends a `TERM` signal for graceful shutdown, and cleans up. If the PID file is stale (process already dead), it is removed automatically.
+
+When `working_directory` is configured, the daemon changes to that directory before starting. This controls where relative file paths resolve -- useful for headless systems where the init system may start the process from an unpredictable directory.
 
 ## Tool use (AI agent autonomy)
 

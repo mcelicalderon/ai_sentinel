@@ -22,7 +22,8 @@ module AiSentinel
       'on_prompt_change' => ->(config, val) { config.on_prompt_change = val.to_sym },
       'tool_safety' => ->(config, val) { config.tool_safety = val.transform_keys(&:to_sym) },
       'max_tool_rounds' => ->(config, val) { config.max_tool_rounds = val },
-      'pid_file' => ->(config, val) { config.pid_file = File.expand_path(val) }
+      'pid_file' => ->(config, val) { config.pid_file = File.expand_path(val) },
+      'working_directory' => ->(config, val) { config.working_directory = File.expand_path(val) }
     }.freeze
 
     attr_reader :config_path, :raw_config
