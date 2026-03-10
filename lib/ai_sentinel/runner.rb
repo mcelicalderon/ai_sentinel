@@ -31,7 +31,7 @@ module AiSentinel
       context
     rescue StandardError => e
       Persistence::ExecutionLog.fail(execution_id, e.message)
-      AiSentinel.logger.error("Workflow '#{workflow.name}' failed: #{e.message}")
+      AiSentinel.log_error(e, context: "Workflow '#{workflow.name}' failed")
       raise
     end
 

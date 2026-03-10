@@ -94,7 +94,7 @@ module AiSentinel
       def compact_context(context_key)
         ContextCompactor.new(context_key: context_key, configuration: configuration).compact_if_needed
       rescue StandardError => e
-        AiSentinel.logger.warn("Context compaction failed for '#{context_key}': #{e.message}")
+        AiSentinel.log_error(e, context: "Context compaction failed for '#{context_key}'")
       end
 
       def prune_old_messages(context_id)

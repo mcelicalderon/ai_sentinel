@@ -50,6 +50,14 @@ module AiSentinel
       configuration.logger
     end
 
+    def log_error(error, context: nil)
+      message = context ? "#{context}: #{error.message}" : error.message
+      logger.error(message)
+      error.backtrace&.first(10)&.each { |line| logger.error("  #{line}") }
+    rescue StandardError
+      nil
+    end
+
     def resolve_api_key
       configuration.api_key ||= ENV.fetch(configuration.env_key_name, nil)
     end

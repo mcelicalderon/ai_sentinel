@@ -2,4 +2,10 @@
 # frozen_string_literal: true
 
 require 'ai_sentinel'
-AiSentinel::CLI.start(ARGV)
+
+begin
+  AiSentinel::CLI.start(ARGV)
+rescue StandardError => e
+  AiSentinel.log_error(e, context: 'Fatal error')
+  exit 1
+end

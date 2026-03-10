@@ -75,8 +75,8 @@ module AiSentinel
           result = tool_executor.execute(tool_name, tool_input)
           AiSentinel.logger.info("    Tool result: #{result.to_s[0..200]}")
           { 'type' => 'tool_result', 'tool_use_id' => tool_id, 'content' => result.to_s }
-        rescue Error => e
-          AiSentinel.logger.warn("    Tool error: #{e.message}")
+        rescue StandardError => e
+          AiSentinel.log_error(e, context: "Tool '#{tool_name}' error")
           { 'type' => 'tool_result', 'tool_use_id' => tool_id, 'content' => "Error: #{e.message}",
             'is_error' => true }
         end

@@ -61,19 +61,17 @@ module AiSentinel
       def execute_tool_call(tool_executor, tool_call, round)
         function = tool_call['function']
         tool_name = function['name']
-        tool_input = JSON.parse(function['arguments'])
         tool_id = tool_call['id']
 
         AiSentinel.logger.info("    Tool call [round #{round + 1}]: #{tool_name}(#{function['arguments']})")
 
-        begin
-          result = tool_executor.execute(tool_name, tool_input)
-          AiSentinel.logger.info("    Tool result: #{result.to_s[0..200]}")
-          { 'role' => 'tool', 'tool_call_id' => tool_id, 'content' => result.to_s }
-        rescue Error => e
-          AiSentinel.logger.warn("    Tool error: #{e.message}")
-          { 'role' => 'tool', 'tool_call_id' => tool_id, 'content' => "Error: #{e.message}" }
-        end
+        tool_input = JSON.parse(function['arguments'])
+        result = tool_executor.execute(tool_name, tool_input)
+        AiSentinel.logger.info("    Tool result: #{result.to_s[0..200]}")
+        { 'role' => 'tool', 'tool_call_id' => tool_id, 'content' => result.to_s }
+      rescue StandardError => e
+        AiSentinel.log_error(e, context: "Tool '#{tool_name}' error")
+        { 'role' => 'tool', 'tool_call_id' => tool_id, 'content' => "Error: #{e.message}" }
       end
 
       def build_messages(prompt, system, context_key, remember, limit: nil)

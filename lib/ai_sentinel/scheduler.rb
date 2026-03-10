@@ -17,8 +17,11 @@ module AiSentinel
       apply_working_directory
 
       if daemonize
+        Persistence::Database.disconnect
         Process.daemon(true, true)
+        Persistence::Database.setup(configuration.database_path)
         write_pid_file
+        setup_crash_cleanup
         AiSentinel.logger.info("AiSentinel started in background (PID #{Process.pid}, #{registry.size} workflow(s))")
       else
         AiSentinel.logger.info("AiSentinel started (#{registry.size} workflow(s)). Press Ctrl+C to stop.")
@@ -32,10 +35,16 @@ module AiSentinel
       @rufus.join
       cleanup_pid_file
       AiSentinel.logger.info('AiSentinel stopped')
+    rescue StandardError => e
+      AiSentinel.log_error(e, context: 'Scheduler crashed')
+      cleanup_pid_file
+      raise
     end
 
     def stop
-      @rufus.shutdown
+      @rufus&.shutdown
+    rescue StandardError => e
+      AiSentinel.log_error(e, context: 'Error during shutdown')
     end
 
     def trigger(workflow_name)
@@ -72,13 +81,17 @@ module AiSentinel
       FileUtils.rm_f(pid_file)
     end
 
+    def setup_crash_cleanup
+      at_exit { cleanup_pid_file }
+    end
+
     def register_workflows
       registry.each do |name, workflow|
         @rufus.cron(workflow.schedule_expression) do
           runner = Runner.new(workflow: workflow, configuration: configuration)
           runner.execute
         rescue StandardError => e
-          AiSentinel.logger.error("Workflow '#{name}' failed: #{e.message}")
+          AiSentinel.log_error(e, context: "Workflow '#{name}' failed")
         end
 
         AiSentinel.logger.info("Registered workflow '#{name}' with schedule '#{workflow.schedule_expression}'")

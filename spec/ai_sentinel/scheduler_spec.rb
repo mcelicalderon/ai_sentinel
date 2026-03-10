@@ -113,6 +113,8 @@ RSpec.describe AiSentinel::Scheduler, :db do
         allow(Process).to receive(:daemon)
         allow(FileUtils).to receive(:mkdir_p)
         allow(File).to receive(:write)
+        allow(AiSentinel::Persistence::Database).to receive(:disconnect)
+        allow(AiSentinel::Persistence::Database).to receive(:setup)
       end
 
       it 'calls Process.daemon before creating the scheduler' do
