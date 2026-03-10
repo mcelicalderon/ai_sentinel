@@ -31,8 +31,10 @@ A lightweight Ruby gem for scheduling AI-driven tasks. Define workflows in a YAM
 - [Conversation memory](#conversation-memory)
   - [Memory and tool use](#memory-and-tool-use)
   - [Context compaction](#context-compaction)
+  - [Custom compaction prompt](#custom-compaction-prompt)
   - [Prompt change detection](#prompt-change-detection)
   - [Token overflow recovery](#token-overflow-recovery)
+- [Error handling](#error-handling)
 - [Logging](#logging)
 - [Development](#development)
 - [License](#license)
@@ -178,7 +180,7 @@ All configuration is done in `ai_sentinel.yml`. API keys can be set in the YAML 
 global:
   api_key: sk-ant-...
   provider: anthropic
-  model: claude-sonnet-4-20250514
+  model: claude-sonnet-4-6
   database: ./ai_sentinel.sqlite3
   max_context_messages: 50
   max_tool_rounds: 10
@@ -229,7 +231,7 @@ AiSentinel supports two providers out of the box. Each has sensible defaults:
 
 | Provider | Default model | Default URL | Env var |
 |----------|--------------|-------------|---------|
-| `anthropic` | `claude-sonnet-4-20250514` | `https://api.anthropic.com/v1/messages` | `ANTHROPIC_API_KEY` |
+| `anthropic` | `claude-sonnet-4-6` | `https://api.anthropic.com/v1/messages` | `ANTHROPIC_API_KEY` |
 | `openai` | `gpt-4o` | `https://api.openai.com/v1/chat/completions` | `OPENAI_API_KEY` |
 
 #### Anthropic
@@ -237,7 +239,7 @@ AiSentinel supports two providers out of the box. Each has sensible defaults:
 ```yaml
 global:
   provider: anthropic
-  model: claude-sonnet-4-20250514    # optional, this is the default
+  model: claude-sonnet-4-6            # optional, this is the default
   api_key: sk-ant-...                # or set ANTHROPIC_API_KEY env var
 ```
 
@@ -282,7 +284,7 @@ workflows:
 ```yaml
 global:
   provider: anthropic
-  model: claude-sonnet-4-20250514
+  model: claude-sonnet-4-6
   tool_safety:
     allowed_commands:
       - echo
@@ -410,6 +412,7 @@ With tool use (AI agent autonomy):
 | `remember` | `false` | When `true`, conversation history is persisted in SQLite and included in subsequent calls, enabling the AI to reference previous analyses across scheduled runs. |
 | `tools` | `nil` | List of tools the AI can use autonomously during this step. See [Tool use](#tool-use-ai-agent-autonomy). |
 | `max_tool_rounds` | `10` (global default) | Max number of tool-loop iterations for this step. Overrides the global `max_tool_rounds`. |
+| `compaction_prompt` | `nil` | Custom system prompt for context compaction. When set, overrides the default generic summarization prompt for this step. See [Custom compaction prompt](#custom-compaction-prompt). |
 
 **Result fields:**
 
@@ -657,6 +660,26 @@ Inspect the current summary with:
 ai_sentinel summary my_workflow my_step
 ```
 
+### Custom compaction prompt
+
+By default, context compaction uses a generic summarization prompt. For domain-specific workflows (e.g., trading agents, monitoring systems), the default prompt may not preserve the right information. Use `compaction_prompt` on an `ai_prompt` step to provide a custom summarization instruction:
+
+```yaml
+- id: trade_cycle
+  action: ai_prompt
+  params:
+    prompt: "Execute a trading cycle. {{fetch.stdout}}"
+    remember: true
+    compaction_prompt: |
+      Summarize the trading history below. Preserve: exact entry prices,
+      fill quantities, fees, position status, cycle count, cumulative P&L,
+      and any adaptive behavior notes. Drop old market data.
+    tools:
+      - shell_command
+```
+
+The custom prompt replaces the system prompt in the compaction LLM call. The user prompt (containing the messages to summarize) is built the same way as the default compaction. When `compaction_prompt` is not set, the default generic summarization prompt is used.
+
 ### Prompt change detection
 
 AiSentinel tracks a SHA256 hash of each step's prompt and system templates. When you modify a prompt template in `ai_sentinel.yml`, AiSentinel detects the change on the next `start` or `run` and asks what to do with the existing conversation context, since it was built with a different prompt.
@@ -692,6 +715,18 @@ If an API call exceeds the provider's token limit despite compaction, AiSentinel
 
 - **Anthropic**: detects HTTP 400 `invalid_request_error` with token-related messages, or HTTP 413 `request_too_large`
 - **OpenAI**: detects HTTP 400 with `maximum context length`, `too many tokens`, or `context_length_exceeded` messages
+
+## Error handling
+
+AiSentinel logs errors with backtraces at every level to aid debugging, especially on headless systems:
+
+- **Workflow failures** -- logged with full backtrace and recorded in the execution history database
+- **Tool execution errors** -- caught and returned to the AI as error messages so the conversation can continue
+- **Context compaction failures** -- logged but non-fatal; the step continues without compacting
+- **Scheduler crashes** -- logged with backtrace before the process exits
+- **Top-level errors** -- caught at the executable entry point to ensure errors are always logged, even for unexpected failures
+
+When running in daemon mode, the PID file is automatically cleaned up on crashes via an `at_exit` hook.
 
 ## Logging
 
