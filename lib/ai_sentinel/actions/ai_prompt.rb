@@ -32,7 +32,8 @@ module AiSentinel
           prompt_template: step.params[:prompt],
           system_template: step.params[:system],
           tool_executor: tool_executor,
-          max_tool_rounds: step.params.fetch(:max_tool_rounds, configuration.max_tool_rounds)
+          max_tool_rounds: step.params.fetch(:max_tool_rounds, configuration.max_tool_rounds),
+          compaction_prompt: step.params[:compaction_prompt]
         )
       end
 

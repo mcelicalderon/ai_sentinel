@@ -66,7 +66,8 @@ module AiSentinel
         messages
       end
 
-      def save_context(context_key, user_message, assistant_message, prompt_template: nil, system_template: nil)
+      def save_context(context_key, user_message, assistant_message, prompt_template: nil, system_template: nil,
+                       compaction_prompt: nil)
         return unless Persistence::Database.connected?
 
         ctx = Persistence::Database.find_or_create_context(context_key)
@@ -81,7 +82,7 @@ module AiSentinel
 
         save_prompt_hash(context_key, prompt_template, system_template) if prompt_template
         prune_old_messages(ctx[:id])
-        compact_context(context_key)
+        compact_context(context_key, compaction_prompt: compaction_prompt)
       end
 
       def save_prompt_hash(context_key, prompt_template, system_template)
@@ -91,8 +92,9 @@ module AiSentinel
         )
       end
 
-      def compact_context(context_key)
-        ContextCompactor.new(context_key: context_key, configuration: configuration).compact_if_needed
+      def compact_context(context_key, compaction_prompt: nil)
+        ContextCompactor.new(context_key: context_key, configuration: configuration,
+                             compaction_prompt: compaction_prompt).compact_if_needed
       rescue StandardError => e
         AiSentinel.log_error(e, context: "Context compaction failed for '#{context_key}'")
       end

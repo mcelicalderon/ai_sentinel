@@ -10,11 +10,12 @@ module AiSentinel
       Respond with ONLY the summary, no preamble or explanation.
     PROMPT
 
-    attr_reader :context_key, :configuration
+    attr_reader :context_key, :configuration, :custom_compaction_prompt
 
-    def initialize(context_key:, configuration:)
+    def initialize(context_key:, configuration:, compaction_prompt: nil)
       @context_key = context_key
       @configuration = configuration
+      @custom_compaction_prompt = compaction_prompt
     end
 
     def compact_if_needed
@@ -74,7 +75,7 @@ module AiSentinel
 
       result = provider.chat(
         prompt: prompt,
-        system: SUMMARIZATION_PROMPT,
+        system: custom_compaction_prompt || SUMMARIZATION_PROMPT,
         workflow_name: nil,
         step_name: nil,
         remember: false

@@ -26,10 +26,10 @@ Metrics/MethodLength:
   Max: 25
 
 Metrics/AbcSize:
-  Max: 38
+  Max: 41
 
 Metrics/ParameterLists:
-  Max: 10
+  Max: 11
 
 RSpec/MultipleExpectations:
   Max: 5

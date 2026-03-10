@@ -9,7 +9,8 @@ module AiSentinel
       API_VERSION = '2023-06-01'
 
       def chat(prompt:, system: nil, model: nil, workflow_name: nil, step_name: nil, remember: true,
-               prompt_template: nil, system_template: nil, tool_executor: nil, max_tool_rounds: 10)
+               prompt_template: nil, system_template: nil, tool_executor: nil, max_tool_rounds: 10,
+               compaction_prompt: nil)
         model ||= configuration.model
         context_key = "#{workflow_name}:#{step_name}"
 
@@ -26,7 +27,8 @@ module AiSentinel
         assistant_text = extract_text(response_data)
         if remember
           save_context(context_key, prompt, assistant_text,
-                       prompt_template: prompt_template, system_template: system_template)
+                       prompt_template: prompt_template, system_template: system_template,
+                       compaction_prompt: compaction_prompt)
         end
 
         Actions::AiPrompt::Result.new(
